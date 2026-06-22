@@ -1,0 +1,118 @@
+name: Publish npm package
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_TARGET_DIR: ${{ github.workspace }}/.build/target
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build macOS binaries
+        run: |
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          mkdir -p npm/dist
+          cargo build --release -p hi --target aarch64-apple-darwin
+          cargo build --release -p hi --target x86_64-apple-darwin
+          cp "$CARGO_TARGET_DIR/aarch64-apple-darwin/release/hi" npm/dist/hi-darwin-arm64
+          cp "$CARGO_TARGET_DIR/x86_64-apple-darwin/release/hi" npm/dist/hi-darwin-x64
+          chmod +x npm/dist/hi-darwin-*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-bins
+          path: npm/dist/hi-darwin-*
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross --locked
+
+      - name: Build Linux binaries
+        run: |
+          rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
+          mkdir -p npm/dist
+          cross build --release -p hi --target x86_64-unknown-linux-gnu
+          cross build --release -p hi --target aarch64-unknown-linux-gnu
+          cp "$CARGO_TARGET_DIR/x86_64-unknown-linux-gnu/release/hi" npm/dist/hi-linux-x64
+          cp "$CARGO_TARGET_DIR/aarch64-unknown-linux-gnu/release/hi" npm/dist/hi-linux-arm64
+          chmod +x npm/dist/hi-linux-*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-bins
+          path: npm/dist/hi-linux-*
+
+  publish:
+    needs: [build-macos, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Assemble dist
+        run: |
+          mkdir -p npm/dist
+          cp artifacts/macos-bins/* npm/dist/
+          cp artifacts/linux-bins/* npm/dist/
+          chmod +x npm/dist/*
+          ls -la npm/dist
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://npm.pkg.github.com
+          scope: "@zggg"
+
+      - name: Publish to GitHub Packages (@zggg/hi)
+        continue-on-error: true
+        working-directory: npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to npmjs (@i99/hi)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          scope: "@i99"
+
+      - name: Upload @i99/hi to npmjs
+        working-directory: npm
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.name = '@i99/hi';
+          delete pkg.publishConfig;
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          NODE
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

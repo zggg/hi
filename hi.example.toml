@@ -1,0 +1,112 @@
+# hi — lightweight personal AI assistant (unified config example)
+#
+# Copy to your home directory:
+#   mkdir -p ~/.hi
+#   cp hi.example.toml ~/.hi/hi.toml
+#
+# Or use the wizards (recommended):
+#   hi setup            # writes [ai], [workspace], [context]
+#   hi gateway setup    # writes [channels.*] (WeCom, Feishu, WeChat iLink, …)
+#
+# Override config path: HI_TOML or HI_CONFIG
+
+# ---------------------------------------------------------------------------
+# Base settings (shared by hi / hi tui / hi chat / hi gateway)
+# ---------------------------------------------------------------------------
+
+# Gateway workspace; local hi/tui/chat use the shell cwd instead
+workspace = "~/.hi/workspace"
+
+# Session DB and data dir (default ~/.hi/data)
+# data_directory = "~/.hi/data"
+
+# Optional: fixed UI language (omit to follow system LANG / LC_* on each run)
+# [locale]
+# lang = "zh" # or "en"
+
+[ai]
+default = "openai-compat"
+
+[ai.providers.openai-compat]
+provider = "openai-compat"
+model = "your-model-name"
+base_url = "http://your-inference-host:8000/v1"
+api_key = "your-api-key-here"
+
+# Second LLM profile (optional) — switch via [ai].default only
+# [ai.providers.codex]
+# provider = "codex"
+# model = "gpt-5.5"
+# base_url = "https://chatgpt.com/backend-api/codex"
+
+[context]
+# Default enabled = true; values are in K tokens (1K ≈ 1000 tokens)
+# enabled = true
+# window_k = 128          # context window ~128K
+# compress_at_k = 96      # start compression above ~96K input
+# protect_tail_k = 32     # keep last ~32K verbatim
+# reserve_k = 16          # reserve ~16K for output/tools this turn
+max_tool_iterations = 12  # ReAct loop cap per turn; budget nudge near limit, tool-less summary when exhausted
+# tool_output_max_chars = 16384   # read/bash single-response cap
+# trim_keep_chars = 2048            # min chars kept per message on emergency trim
+
+[memory]
+# Default enabled = true: knot long-term memory
+# enabled = true
+# owner_id = "local"
+# --- auto-extract triggers (not manual) ---
+# extract_after_turn = true            # run post-turn extraction path
+# extract_after_turn_cue_only = true   # only on cues (remember/my name/I like…) or large turns; false = every turn
+# extract_turn_min_tokens = 200        # also trigger when new turn content reaches this size (0 = off)
+# extract_on_compress = true           # extract from trimmed segments on context compression (safety net)
+# --- tools ---
+# memory_search_enabled = true         # agent can search memory on demand
+# memory_write_tool = true             # agent can write memory mid-turn
+
+[logging]
+# trace | debug | info | warn | error (RUST_LOG env overrides)
+level = "info"
+
+[tools.approvals]
+# on = confirm by default; off = approve everything (legacy permissions = ["*"])
+mode = "on"
+
+[tools.approvals.workspace]
+# skip approval for read/write/edit/bash inside workspace (hardline/deny still apply)
+trust = true
+
+[tools.approvals.filesystem]
+# path prefixes outside workspace; user grants append here after confirm
+allow_read = []
+allow_write = []
+# deny_read = ["~/.ssh"]
+# deny_write = ["~/.ssh", "*.pem"]
+
+[tools.approvals.commands]
+# bash allowlist (grant_key exact match, not substring; includes pipe-to-shell, obfuscated-shell, …)
+# allow = ["npm", "curl"]
+allow = []
+
+# ---------------------------------------------------------------------------
+# Message channels (hi gateway only; same hi.toml as above)
+# Wizard: hi gateway setup — WeCom smart bot, Feishu, personal WeChat iLink, …
+# Each instance has enabled (default true); gateway starts all enabled instances
+# ---------------------------------------------------------------------------
+
+[channels.wecom]
+enabled = true
+bot_id = "your-bot-id"
+secret = "your-wecom-bot-secret"
+# websocket_url = "wss://openws.work.weixin.qq.com"
+# Default dm_policy = "allowlist" (requires allow_from); use open for dev only
+dm_policy = "allowlist"
+allow_from = ["your-userid"]
+# welcome_message = "Hello, I'm hi — your lightweight personal AI assistant"
+
+# Second WeCom bot (optional) — session id wecom:support:{userid}
+# [channels.wecom.support]
+# enabled = true
+# bot_id = "your-second-bot-id"
+# secret = "your-second-secret"
+# dm_policy = "allowlist"
+# allow_from = ["ops-userid"]

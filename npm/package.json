@@ -1,0 +1,28 @@
+{
+  "name": "@zggg/hi",
+  "version": "0.0.6",
+  "description": "Ultra-lightweight personal AI assistant",
+  "author": "gz",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zggg/hi.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "bin": {
+    "hi": "bin/hi.js"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ]
+}

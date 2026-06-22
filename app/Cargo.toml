@@ -1,0 +1,32 @@
+[package]
+name = "hi"
+description = "hi CLI — ultra-lightweight personal AI assistant entry point"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "hi"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
+reqwest.workspace = true
+
+hi-core = { workspace = true }
+hi-ai = { workspace = true }
+hi-tui = { workspace = true }
+hi-gateway = { workspace = true }
+cliclack.workspace = true
+qrcode.workspace = true
