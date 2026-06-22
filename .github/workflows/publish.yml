@@ -91,9 +91,13 @@ jobs:
           node-version: 20
           registry-url: https://npm.pkg.github.com
           scope: "@zggg"
+          always-auth: true
 
       - name: Publish to GitHub Packages (@zggg/hi)
         working-directory: npm
-        run: npm publish
+        run: |
+          npm config set //npm.pkg.github.com/:_authToken "${NODE_AUTH_TOKEN}"
+          npm config set @zggg:registry https://npm.pkg.github.com
+          npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
