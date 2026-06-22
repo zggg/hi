@@ -132,4 +132,4 @@ done
 
 echo
 ls -lh "$DIST"
-echo "完成。产物仅在 npm/dist/；@zggg/hi 见 .github/workflows/publish.yml（GitHub Packages），@i99/hi（npmjs）请手动发布"
+echo "完成。产物在 npm/dist/"

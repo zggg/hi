@@ -28,8 +28,6 @@ npm install -g @i99/hi
 hi setup
 ```
 
-GitHub Release publishes `@zggg/hi` to GitHub Packages. For `@i99/hi` on npmjs, run `./scripts/build-dist.sh` and publish locally.
-
 Docs: [Install](docs/guides/install.md) · [Architecture](ARCHITECTURE.md) · [Security](docs/SECURITY.md)
 
 ## Memory (Knot system)
