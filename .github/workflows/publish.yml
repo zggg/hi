@@ -92,8 +92,17 @@ jobs:
           registry-url: https://npm.pkg.github.com
           scope: "@zggg"
 
+      - name: Delete orphan package version (re-publish links to this repo)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          for id in $(gh api /user/packages/npm/hi/versions --jq '.[].id' 2>/dev/null); do
+            gh api --method DELETE "/user/packages/npm/hi/versions/${id}"
+          done
+
       - name: Publish to GitHub Packages (@zggg/hi)
         working-directory: npm
-        run: npm publish
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
