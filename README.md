@@ -32,7 +32,7 @@ npm install -g @i99/hi
 hi setup
 ```
 
-发布 GitHub Release 时自动推包；也可在 Actions → **Publish npm package** 手动运行。
+Release 时自动推 `@zggg/hi` 到 GitHub Packages；`@i99/hi`（npmjs）请本地 `./scripts/build-dist.sh` 后手动发布。
 
 文档：[安装指南](docs/guides/install.md) · [架构](ARCHITECTURE.md) · [安全](docs/SECURITY.md)
 

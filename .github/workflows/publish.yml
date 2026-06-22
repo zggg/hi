@@ -90,29 +90,7 @@ jobs:
           scope: "@zggg"
 
       - name: Publish to GitHub Packages (@zggg/hi)
-        continue-on-error: true
         working-directory: npm
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish to npmjs (@i99/hi)
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          registry-url: https://registry.npmjs.org
-          scope: "@i99"
-
-      - name: Upload @i99/hi to npmjs
-        working-directory: npm
-        run: |
-          node <<'NODE'
-          const fs = require('fs');
-          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          pkg.name = '@i99/hi';
-          delete pkg.publishConfig;
-          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-          NODE
-          npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

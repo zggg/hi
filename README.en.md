@@ -28,7 +28,7 @@ npm install -g @i99/hi
 hi setup
 ```
 
-Publishing: GitHub Release or Actions → **Publish npm package**.
+GitHub Release publishes `@zggg/hi` to GitHub Packages. For `@i99/hi` on npmjs, run `./scripts/build-dist.sh` and publish locally.
 
 Docs: [Install](docs/guides/install.md) · [Architecture](ARCHITECTURE.md) · [Security](docs/SECURITY.md)
 
