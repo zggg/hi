@@ -71,7 +71,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -89,16 +88,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           registry-url: https://npm.pkg.github.com
           scope: "@zggg"
-          always-auth: true
 
       - name: Publish to GitHub Packages (@zggg/hi)
         working-directory: npm
-        run: |
-          npm config set //npm.pkg.github.com/:_authToken "${NODE_AUTH_TOKEN}"
-          npm config set @zggg:registry https://npm.pkg.github.com
-          npm publish --access public
+        run: npm publish
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
