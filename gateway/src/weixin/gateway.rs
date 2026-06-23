@@ -4,27 +4,26 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use hi_core::approval::ApprovalHandler;
 use hi_core::error::{Error, Result};
-use hi_core::{
-    channel_reply_chunks, is_approval_confirm, is_approval_deny, t, Channel, Locale, MessageId,
-    PersistedAgentHost, SessionId, WeixinConfig,
-    DEFAULT_CHANNEL_CHUNK_BYTES,
-};
+use hi_core::{t, Channel, Locale, MessageId, PersistedAgentHost, SessionId, WeixinConfig};
 use tokio::sync::{Mutex, Semaphore};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
+use crate::common::{
+    ApprovalBus, ChannelApproval, ChannelMessenger, IdDedup, ReplySink, TurnContext,
+    TurnHookContext, TurnHooks, process_turn_with_retry, spawn_bounded_turn,
+};
 use crate::run::default_turn_concurrency;
 use crate::weixin::ilink::{
     extract_text, is_user_text_message, IlinkClient, SESSION_EXPIRED_ERRCODE, WeixinMessage,
 };
 use crate::weixin::state::WeixinPollState;
 
-const WEXIN_TURN_MAX_ATTEMPTS: u32 = 2;
 const STATE_SAVE_INTERVAL: Duration = Duration::from_secs(30);
 const SESSION_PAUSE_MS: u64 = 60 * 60 * 1000;
 const TURN_WALL_TIMEOUT: Duration = Duration::from_secs(180);
 const BUSY_REPLY_COOLDOWN: Duration = Duration::from_secs(30);
+const SEEN_MESSAGE_MAX: usize = 10_000;
 
 /// Author: gz
 #[derive(Clone)]
@@ -43,8 +42,8 @@ pub struct WeixinGateway {
     workdir: PathBuf,
     turn_semaphore: Arc<Semaphore>,
     greeted: Arc<Mutex<HashSet<String>>>,
-    seen_ids: Arc<Mutex<HashSet<i64>>>,
-    approval_bus: Arc<WeixinApprovalBus>,
+    seen_ids: IdDedup,
+    approval_bus: Arc<ApprovalBus>,
     session_paused_until: Arc<Mutex<Option<Instant>>>,
     /// Senders with an agent turn in flight (allows getupdates while awaiting approval).
     active_senders: Arc<Mutex<HashSet<String>>>,
@@ -78,8 +77,8 @@ impl WeixinGateway {
             workdir,
             turn_semaphore: Arc::new(Semaphore::new(default_turn_concurrency())),
             greeted: Arc::new(Mutex::new(HashSet::new())),
-            seen_ids: Arc::new(Mutex::new(HashSet::new())),
-            approval_bus: Arc::new(WeixinApprovalBus::new()),
+            seen_ids: IdDedup::new(SEEN_MESSAGE_MAX),
+            approval_bus: Arc::new(ApprovalBus::new()),
             session_paused_until: Arc::new(Mutex::new(None)),
             active_senders: Arc::new(Mutex::new(HashSet::new())),
             sender_context_tokens: Arc::new(Mutex::new(HashMap::new())),
@@ -222,12 +221,8 @@ impl WeixinGateway {
         }
 
         if let Some(id) = msg.message_id {
-            let mut seen = self.seen_ids.lock().await;
-            if !seen.insert(id) {
+            if !self.seen_ids.try_insert(id).await {
                 return Ok(());
-            }
-            if seen.len() > 10_000 {
-                seen.clear();
             }
         }
 
@@ -279,41 +274,62 @@ impl WeixinGateway {
 
         let gateway = self.clone();
         let client = client.clone_ref();
-        tokio::spawn(async move {
-            let Ok(_permit) = gateway.turn_semaphore.acquire().await else {
-                let token = shared_token.lock().await.clone();
-                deliver_user_message(
-                    &client,
-                    &sender_id,
-                    &token,
-                    &t(
-                        gateway.ctx.locale,
-                        MessageId::GatewayProcessFailed,
-                        &["system busy".into()],
-                    ),
-                )
-                .await;
-                gateway.active_senders.lock().await.remove(&sender_id);
-                gateway.sender_context_tokens.lock().await.remove(&sender_id);
-                gateway.last_busy_notice.lock().await.remove(&sender_id);
-                return;
-            };
-            let result = gateway
-                .process_user_turn(client, sender_id.clone(), text, shared_token)
-                .await;
-            gateway.active_senders.lock().await.remove(&sender_id);
-            gateway.sender_context_tokens.lock().await.remove(&sender_id);
-            gateway.last_busy_notice.lock().await.remove(&sender_id);
-            if let Err(e) = result {
-                warn!(
-                    endpoint = %gateway.ctx.endpoint_id,
-                    sender_id = %sender_id,
-                    error = %e,
-                    "weixin user turn failed"
-                );
-            }
-        });
+        spawn_bounded_turn(
+            Arc::clone(&self.turn_semaphore),
+            {
+                let gateway = gateway.clone();
+                let sender_id = sender_id.clone();
+                let shared_token = Arc::clone(&shared_token);
+                move || {
+                    let gateway = gateway.clone();
+                    let client = client.clone_ref();
+                    let sender_id = sender_id.clone();
+                    let shared_token = Arc::clone(&shared_token);
+                    tokio::spawn(async move {
+                        let token = shared_token.lock().await.clone();
+                        deliver_user_message(
+                            &client,
+                            &sender_id,
+                            &token,
+                            &t(
+                                gateway.ctx.locale,
+                                MessageId::GatewayProcessFailed,
+                                &["system busy".into()],
+                            ),
+                        )
+                        .await;
+                        gateway.cleanup_active_sender(&sender_id).await;
+                    });
+                }
+            },
+            move || {
+                let gateway = gateway.clone();
+                let client = client.clone_ref();
+                let sender_id = sender_id.clone();
+                let shared_token = Arc::clone(&shared_token);
+                async move {
+                    let result = gateway
+                        .process_user_turn(client, sender_id.clone(), text, shared_token)
+                        .await;
+                    gateway.cleanup_active_sender(&sender_id).await;
+                    if let Err(e) = result {
+                        warn!(
+                            endpoint = %gateway.ctx.endpoint_id,
+                            sender_id = %sender_id,
+                            error = %e,
+                            "weixin user turn failed"
+                        );
+                    }
+                }
+            },
+        );
         Ok(())
+    }
+
+    async fn cleanup_active_sender(&self, sender_id: &str) {
+        self.active_senders.lock().await.remove(sender_id);
+        self.sender_context_tokens.lock().await.remove(sender_id);
+        self.last_busy_notice.lock().await.remove(sender_id);
     }
 
     async fn maybe_send_busy_notice(
@@ -363,138 +379,54 @@ impl WeixinGateway {
         content: String,
         context_token: Arc<Mutex<String>>,
     ) -> Result<()> {
+        let turn_ctx = TurnContext::new(
+            self.ctx.endpoint_id.clone(),
+            self.ctx.locale,
+            Arc::clone(&self.host),
+            self.workdir.clone(),
+        );
         let session_id = Channel::weixin_main_session(&self.ctx.account);
-        let mut last_err: Option<Error> = None;
-
-        for attempt in 1..=WEXIN_TURN_MAX_ATTEMPTS {
-            match self
-                .run_user_turn(
-                    &client,
-                    &session_id,
-                    &sender_id,
-                    &content,
-                    Arc::clone(&context_token),
-                )
-                .await
-            {
-                Ok(mut parts) => {
-                    parts = normalize_reply_parts(self.ctx.locale, parts);
-                    if let Some(welcome) = self.take_welcome_prefix(&sender_id).await {
-                        prepend_welcome(&mut parts, &welcome);
-                    }
-                    let token = context_token.lock().await.clone();
-                    if let Err(e) = send_reply_parts(&client, &sender_id, &token, parts).await {
-                        deliver_user_message(
-                            &client,
-                            &sender_id,
-                            &token,
-                            &t(
-                                self.ctx.locale,
-                                MessageId::GatewayProcessFailed,
-                                &[e.to_string()],
-                            ),
-                        )
-                        .await;
-                    }
-                    return Ok(());
-                }
-                Err(e) => {
-                    if attempt < WEXIN_TURN_MAX_ATTEMPTS {
-                        warn!(
-                            endpoint = %self.ctx.endpoint_id,
-                            sender_id = %sender_id,
-                            attempt,
-                            error = %e,
-                            "weixin turn failed, retrying"
-                        );
-                        tokio::time::sleep(Duration::from_millis(500)).await;
-                    }
-                    last_err = Some(e);
-                }
+        let typing_user = {
+            let configured = self.ctx.weixin.ilink_user_id.trim();
+            if configured.is_empty() {
+                sender_id.clone()
+            } else {
+                configured.to_string()
             }
-        }
-
-        let err = last_err.unwrap_or_else(|| Error::Message("unknown weixin turn failure".into()));
-        record_dead_letter(&self.ctx, &sender_id, &session_id, &err);
-        let token = context_token.lock().await.clone();
-        deliver_user_message(
-            &client,
-            &sender_id,
-            &token,
-            &t(
-                self.ctx.locale,
-                MessageId::GatewayProcessFailed,
-                &[user_visible_error(self.ctx.locale, &err)],
-            ),
-        )
-        .await;
-        Ok(())
-    }
-
-    async fn run_user_turn(
-        &self,
-        client: &IlinkClient,
-        session_id: &SessionId,
-        sender_id: &str,
-        content: &str,
-        context_token: Arc<Mutex<String>>,
-    ) -> Result<Vec<String>> {
-        let typing_user = self.ctx.weixin.ilink_user_id.trim();
-        let typing_user = if typing_user.is_empty() {
-            sender_id
-        } else {
-            typing_user
         };
-        let typing_ticket = {
-            let token = context_token.lock().await.clone();
-            client
-                .get_config(typing_user, Some(&token))
-                .await
-                .ok()
-                .and_then(|r| r.typing_ticket)
-                .filter(|s| !s.is_empty())
-        };
-
-        if let Some(ticket) = typing_ticket.as_deref() {
-            let _ = client.send_typing(typing_user, ticket, true).await;
-        }
-
-        let approval = WeixinApproval {
+        let approval = ChannelApproval {
             bus: Arc::clone(&self.approval_bus),
-            client: client.clone_ref(),
-            sender_id: sender_id.to_string(),
-            context_token: Arc::clone(&context_token),
+            user_key: sender_id.clone(),
+            messenger: WeixinMessenger {
+                client: client.clone_ref(),
+                sender_id: sender_id.clone(),
+                context_token: Arc::clone(&context_token),
+            },
         };
-        let events = match tokio::time::timeout(
-            TURN_WALL_TIMEOUT,
-            self.host.run_turn(
-                session_id.clone(),
-                self.workdir.clone(),
-                content,
-                &approval,
-                None,
-            ),
+        let hooks = WeixinTurnHooks {
+            gateway: self.clone(),
+            client: client.clone_ref(),
+            sender_id: sender_id.clone(),
+            context_token: Arc::clone(&context_token),
+            typing_user,
+            typing_ticket: Mutex::new(None),
+        };
+        let sink = WeixinReplySink {
+            client,
+            sender_id,
+            context_token,
+        };
+        process_turn_with_retry(
+            &turn_ctx,
+            "weixin",
+            &hooks.sender_id,
+            session_id,
+            &content,
+            &approval,
+            &hooks,
+            &sink,
         )
         .await
-        {
-            Ok(Ok(events)) => events,
-            Ok(Err(e)) => return Err(e),
-            Err(_) => {
-                return Err(Error::Message(format!(
-                    "处理超时（{} 秒），请稍后重试。",
-                    TURN_WALL_TIMEOUT.as_secs()
-                )));
-            }
-        };
-
-        if let Some(ticket) = typing_ticket.as_deref() {
-            let _ = client.send_typing(typing_user, ticket, false).await;
-        }
-
-        Ok(channel_reply_chunks(
-            &events,
-            DEFAULT_CHANNEL_CHUNK_BYTES,
-        ))
     }
 }
 
@@ -559,100 +491,115 @@ async fn deliver_user_message(
     }
 }
 
-fn normalize_reply_parts(locale: Locale, parts: Vec<String>) -> Vec<String> {
-    if parts.iter().all(|p| p.trim().is_empty()) {
-        vec![t(locale, MessageId::EmptyChannelReply, &[])]
-    } else {
-        parts
-    }
-}
-
-fn user_visible_error(locale: Locale, err: &Error) -> String {
-    let raw = err.to_string();
-    if raw.contains("error sending request") || raw.contains("cannot reach LLM service") {
-        t(locale, MessageId::LlmTransportError, &[raw])
-    } else if raw.len() > 400 {
-        format!("{}…", &raw[..400])
-    } else {
-        raw
-    }
-}
-
-fn record_dead_letter(ctx: &WeixinCtx, sender_id: &str, session_id: &SessionId, err: &Error) {
-    error!(
-        endpoint = %ctx.endpoint_id,
-        sender_id,
-        session = %session_id.0,
-        error = %err,
-        "weixin message dead letter"
-    );
-}
-
 /// Author: gz
-struct WeixinApprovalBus {
-    waiters: Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
-}
-
-impl WeixinApprovalBus {
-    fn new() -> Self {
-        Self {
-            waiters: Mutex::new(std::collections::HashMap::new()),
-        }
-    }
-
-    async fn try_resolve(&self, sender_id: &str, text: &str, user_allowed: bool) -> bool {
-        let mut waiters = self.waiters.lock().await;
-        if let Some(tx) = waiters.remove(sender_id) {
-            let trimmed = text.trim();
-            let approved = user_allowed && is_approval_confirm(trimmed);
-            let denied = is_approval_deny(trimmed);
-            if approved {
-                let _ = tx.send(true);
-                return true;
-            }
-            if denied {
-                let _ = tx.send(false);
-                return true;
-            }
-            waiters.insert(sender_id.to_string(), tx);
-            return false;
-        }
-        false
-    }
-}
-
-/// Author: gz
-struct WeixinApproval {
-    bus: Arc<WeixinApprovalBus>,
+struct WeixinMessenger {
     client: IlinkClient,
     sender_id: String,
     context_token: Arc<Mutex<String>>,
 }
 
 #[async_trait]
-impl ApprovalHandler for WeixinApproval {
-    async fn approve_bash(&self, command: &str) -> Result<bool> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.bus
-            .waiters
-            .lock()
-            .await
-            .insert(self.sender_id.clone(), tx);
+impl ChannelMessenger for WeixinMessenger {
+    async fn send_user_text(&self, content: &str) -> Result<()> {
         let token = self.context_token.lock().await.clone();
         let _ = self
             .client
-            .send_text(&self.sender_id, &token, command)
-            .await;
-        match tokio::time::timeout(Duration::from_secs(300), rx).await {
-            Ok(Ok(v)) => Ok(v),
-            _ => {
-                self.bus.waiters.lock().await.remove(&self.sender_id);
-                Ok(false)
-            }
-        }
+            .send_text(&self.sender_id, &token, content)
+            .await?;
+        Ok(())
     }
 }
 
-#[cfg(test)]
-#[path = "../../test/unit/weixin/gateway.rs"]
-mod tests;
+/// Author: gz
+struct WeixinReplySink {
+    client: IlinkClient,
+    sender_id: String,
+    context_token: Arc<Mutex<String>>,
+}
+
+#[async_trait]
+impl ReplySink for WeixinReplySink {
+    async fn deliver_parts(&self, parts: Vec<String>) -> Result<()> {
+        let token = self.context_token.lock().await.clone();
+        send_reply_parts(&self.client, &self.sender_id, &token, parts).await
+    }
+
+    async fn deliver_failure(&self, message: &str) -> Result<()> {
+        let token = self.context_token.lock().await.clone();
+        deliver_user_message(&self.client, &self.sender_id, &token, message).await;
+        Ok(())
+    }
+}
+
+/// Author: gz
+struct WeixinTurnHooks {
+    gateway: WeixinGateway,
+    client: IlinkClient,
+    sender_id: String,
+    context_token: Arc<Mutex<String>>,
+    typing_user: String,
+    typing_ticket: Mutex<Option<String>>,
+}
+
+#[async_trait]
+impl TurnHooks for WeixinTurnHooks {
+    async fn wall_timeout(&self, _ctx: &TurnHookContext<'_>) -> Result<Option<Duration>> {
+        Ok(Some(TURN_WALL_TIMEOUT))
+    }
+
+    async fn before_run_turn(&self, _ctx: &TurnHookContext<'_>) -> Result<()> {
+        let token = self.context_token.lock().await.clone();
+        let ticket = self
+            .client
+            .get_config(&self.typing_user, Some(&token))
+            .await
+            .ok()
+            .and_then(|r| r.typing_ticket)
+            .filter(|s| !s.is_empty());
+        if let Some(ref ticket) = ticket {
+            let _ = self
+                .client
+                .send_typing(&self.typing_user, ticket, true)
+                .await;
+        }
+        *self.typing_ticket.lock().await = ticket;
+        Ok(())
+    }
+
+    async fn after_run_turn(&self, _ctx: &TurnHookContext<'_>) -> Result<()> {
+        if let Some(ticket) = self.typing_ticket.lock().await.as_deref() {
+            let _ = self
+                .client
+                .send_typing(&self.typing_user, ticket, false)
+                .await;
+        }
+        Ok(())
+    }
+
+    async fn before_deliver(
+        &self,
+        _ctx: &TurnHookContext<'_>,
+        parts: &mut Vec<String>,
+    ) -> Result<()> {
+        if let Some(welcome) = self.gateway.take_welcome_prefix(&self.sender_id).await {
+            prepend_welcome(parts, &welcome);
+        }
+        Ok(())
+    }
+
+    async fn on_delivery_failed(&self, ctx: &TurnHookContext<'_>, err: &Error) -> Result<()> {
+        let token = self.context_token.lock().await.clone();
+        deliver_user_message(
+            &self.client,
+            &self.sender_id,
+            &token,
+            &t(
+                ctx.locale,
+                MessageId::GatewayProcessFailed,
+                &[err.to_string()],
+            ),
+        )
+        .await;
+        Ok(())
+    }
+}

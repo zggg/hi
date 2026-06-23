@@ -1,6 +1,7 @@
 //! Message-channel gateway adapters. Current: WeCom, Feishu, Weixin iLink.
 
 pub mod adapter;
+pub mod common;
 pub mod feishu;
 pub mod run;
 pub mod wecom;

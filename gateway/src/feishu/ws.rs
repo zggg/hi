@@ -11,18 +11,20 @@ use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 use tracing::{debug, error, info, warn};
 
-use hi_core::approval::ApprovalHandler;
 use hi_core::error::{Error, Result};
 use hi_core::{
-    channel_reply_chunks, is_approval_confirm, is_approval_deny, t, Channel, FeishuConfig, Locale,
-    MessageId, PersistedAgentHost, SessionId,
-    DEFAULT_CHANNEL_CHUNK_BYTES,
+    Channel, FeishuConfig, Locale, PersistedAgentHost, SessionId,
 };
 
+use crate::common::{
+    ApprovalBus, ChannelApproval, ChannelMessenger, NoopTurnHooks, ReplySink, TimedDedup,
+    TurnContext, process_turn_with_retry, reconnect_loop, warn_dm_policy,
+};
+use crate::common::config_warn::warn_feishu_mention;
 use crate::run::default_turn_concurrency;
 
 const WS_HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(300);
-const FEISHU_TURN_MAX_ATTEMPTS: u32 = 2;
+const MESSAGE_DEDUP_TTL: Duration = Duration::from_secs(30 * 60);
 const ACK_PAYLOAD: &[u8] = br#"{"code":200,"headers":{},"data":[]}"#;
 
 type FeishuFragCache = HashMap<String, (Vec<Option<Vec<u8>>>, Instant)>;
@@ -174,7 +176,7 @@ pub struct FeishuWsGateway {
     turn_semaphore: Arc<Semaphore>,
     tenant_token: Arc<Mutex<Option<CachedToken>>>,
     bot_open_id: Arc<Mutex<Option<String>>>,
-    seen_message_ids: Arc<Mutex<HashMap<String, Instant>>>,
+    seen_messages: TimedDedup,
 }
 
 impl FeishuWsGateway {
@@ -186,23 +188,8 @@ impl FeishuWsGateway {
         workdir: PathBuf,
         locale: Locale,
     ) -> Self {
-        if feishu.dm_policy == "open" {
-            warn!(
-                endpoint = %endpoint_id,
-                "feishu dm_policy=open: 所有用户可触发 Agent；生产环境请改用 allowlist"
-            );
-        } else if feishu.dm_policy == "allowlist" && feishu.allow_from.is_empty() {
-            warn!(
-                endpoint = %endpoint_id,
-                "feishu allowlist 为空: 无人可发消息，请在 hi.toml 配置 allow_from"
-            );
-        }
-        if !feishu.mention_enabled {
-            info!(
-                endpoint = %endpoint_id,
-                "feishu mention_enabled=false: 群聊将响应所有文本消息（需开通 im:message.group_msg 权限）"
-            );
-        }
+        warn_dm_policy(&endpoint_id, &feishu.dm_policy, feishu.allow_from.is_empty());
+        warn_feishu_mention(&endpoint_id, feishu.mention_enabled);
         Self {
             ctx: FeishuCtx {
                 endpoint_id,
@@ -216,7 +203,7 @@ impl FeishuWsGateway {
             turn_semaphore: Arc::new(Semaphore::new(default_turn_concurrency())),
             tenant_token: Arc::new(Mutex::new(None)),
             bot_open_id: Arc::new(Mutex::new(None)),
-            seen_message_ids: Arc::new(Mutex::new(HashMap::new())),
+            seen_messages: TimedDedup::new(MESSAGE_DEDUP_TTL),
         }
     }
 
@@ -263,22 +250,9 @@ impl FeishuWsGateway {
 
     pub async fn run(self) -> Result<()> {
         self.validate_config()?;
-        let mut backoff = Duration::from_secs(2);
-        loop {
-            match self.run_once().await {
-                Ok(()) => backoff = Duration::from_secs(2),
-                Err(e) => {
-                    warn!(
-                        endpoint = %self.ctx.endpoint_id,
-                        error = %e,
-                        ?backoff,
-                        "feishu gateway disconnected"
-                    );
-                    tokio::time::sleep(backoff).await;
-                    backoff = (backoff * 2).min(Duration::from_secs(60));
-                }
-            }
-        }
+        let endpoint_id = self.ctx.endpoint_id.clone();
+        reconnect_loop(&endpoint_id, "feishu gateway", &self, |gw| gw.run_once()).await;
+        Ok(())
     }
 
     async fn run_once(&self) -> Result<()> {
@@ -309,7 +283,7 @@ impl FeishuWsGateway {
 
         send_ping(&write, &mut seq, service_id).await?;
 
-        let approval_bus = Arc::new(FeishuApprovalBus::new());
+        let approval_bus = Arc::new(ApprovalBus::new());
         let (reply_tx, mut reply_rx) = mpsc::unbounded_channel::<ReplyJob>();
 
         loop {
@@ -373,7 +347,7 @@ impl FeishuWsGateway {
         write: GatewayWrite,
         _service_id: i32,
         frag_cache: &mut FeishuFragCache,
-        approval_bus: Arc<FeishuApprovalBus>,
+        approval_bus: Arc<ApprovalBus>,
         reply_tx: mpsc::UnboundedSender<ReplyJob>,
     ) -> Result<()> {
         let frame = PbFrame::decode(data)
@@ -435,14 +409,11 @@ impl FeishuWsGateway {
             return Ok(());
         }
 
+        if !self.seen_messages
+            .try_insert(recv.message.message_id.clone())
+            .await
         {
-            let now = Instant::now();
-            let mut seen = self.seen_message_ids.lock().await;
-            seen.retain(|_, t| now.duration_since(*t) < Duration::from_secs(30 * 60));
-            if seen.contains_key(&recv.message.message_id) {
-                return Ok(());
-            }
-            seen.insert(recv.message.message_id.clone(), now);
+            return Ok(());
         }
 
         let text = match extract_text(&recv.message) {
@@ -705,96 +676,91 @@ struct ReplyJob {
 }
 
 /// Author: gz
+struct FeishuMessenger {
+    reply_tx: mpsc::UnboundedSender<ReplyJob>,
+    chat_id: String,
+}
+
+#[async_trait::async_trait]
+impl ChannelMessenger for FeishuMessenger {
+    async fn send_user_text(&self, content: &str) -> Result<()> {
+        let _ = self.reply_tx.send(ReplyJob {
+            chat_id: self.chat_id.clone(),
+            content: content.to_string(),
+        });
+        Ok(())
+    }
+}
+
+/// Author: gz
+struct FeishuReplySink {
+    reply_tx: mpsc::UnboundedSender<ReplyJob>,
+    chat_id: String,
+}
+
+#[async_trait::async_trait]
+impl ReplySink for FeishuReplySink {
+    async fn deliver_parts(&self, parts: Vec<String>) -> Result<()> {
+        for content in parts {
+            let _ = self.reply_tx.send(ReplyJob {
+                chat_id: self.chat_id.clone(),
+                content,
+            });
+        }
+        Ok(())
+    }
+
+    async fn deliver_failure(&self, message: &str) -> Result<()> {
+        let _ = self.reply_tx.send(ReplyJob {
+            chat_id: self.chat_id.clone(),
+            content: message.to_string(),
+        });
+        Ok(())
+    }
+}
+
+/// Author: gz
 struct MessageHandlerCtx {
     ctx: FeishuCtx,
     host: Arc<dyn PersistedAgentHost>,
     workdir: PathBuf,
-    approval_bus: Arc<FeishuApprovalBus>,
+    approval_bus: Arc<ApprovalBus>,
     reply_tx: mpsc::UnboundedSender<ReplyJob>,
     open_id: String,
     chat_id: String,
 }
 
 async fn process_user_turn(handler: MessageHandlerCtx, content: String) -> Result<()> {
-    let session_id = Channel::feishu_account_user(&handler.ctx.account, &handler.open_id);
-    let mut last_err: Option<Error> = None;
-
-    for attempt in 1..=FEISHU_TURN_MAX_ATTEMPTS {
-        match run_user_turn(&session_id, &handler, &content).await {
-            Ok(parts) => {
-                send_reply_parts(&handler.reply_tx, &handler.chat_id, parts);
-                return Ok(());
-            }
-            Err(e) => {
-                if attempt < FEISHU_TURN_MAX_ATTEMPTS {
-                    warn!(
-                        endpoint = %handler.ctx.endpoint_id,
-                        open_id = %handler.open_id,
-                        attempt,
-                        error = %e,
-                        "feishu turn failed, retrying"
-                    );
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                }
-                last_err = Some(e);
-            }
-        }
-    }
-
-    let err = last_err.unwrap_or_else(|| Error::Message("unknown feishu turn failure".into()));
-    record_dead_letter(&handler.ctx, &handler.open_id, &session_id, &err);
-    let _ = handler.reply_tx.send(ReplyJob {
-        chat_id: handler.chat_id.clone(),
-        content: t(
-            handler.ctx.locale,
-            MessageId::GatewayProcessFailed,
-            &[err.to_string()],
-        ),
-    });
-    Ok(())
-}
-
-async fn run_user_turn(
-    session_id: &SessionId,
-    handler: &MessageHandlerCtx,
-    content: &str,
-) -> Result<Vec<String>> {
-    let approval = FeishuApproval {
-        bus: Arc::clone(&handler.approval_bus),
-        open_id: handler.open_id.clone(),
-        reply_tx: handler.reply_tx.clone(),
-        chat_id: handler.chat_id.clone(),
-    };
-    let events = handler
-        .host
-        .run_turn(
-            session_id.clone(),
-            handler.workdir.clone(),
-            content,
-            &approval,
-            None,
-        )
-        .await?;
-    Ok(channel_reply_chunks(&events, DEFAULT_CHANNEL_CHUNK_BYTES))
-}
-
-fn send_reply_parts(reply_tx: &mpsc::UnboundedSender<ReplyJob>, chat_id: &str, parts: Vec<String>) {
-    for content in parts {
-        let _ = reply_tx.send(ReplyJob {
-            chat_id: chat_id.to_string(),
-            content,
-        });
-    }
-}
-
-fn record_dead_letter(ctx: &FeishuCtx, open_id: &str, session_id: &SessionId, err: &Error) {
-    error!(
-        endpoint = %ctx.endpoint_id,
-        open_id,
-        session = %session_id.0,
-        error = %err,
-        "feishu message dead letter"
+    let turn_ctx = TurnContext::new(
+        handler.ctx.endpoint_id.clone(),
+        handler.ctx.locale,
+        Arc::clone(&handler.host),
+        handler.workdir.clone(),
     );
+    let session_id = Channel::feishu_account_user(&handler.ctx.account, &handler.open_id);
+    let approval = ChannelApproval {
+        bus: Arc::clone(&handler.approval_bus),
+        user_key: handler.open_id.clone(),
+        messenger: FeishuMessenger {
+            reply_tx: handler.reply_tx.clone(),
+            chat_id: handler.chat_id.clone(),
+        },
+    };
+    let sink = FeishuReplySink {
+        reply_tx: handler.reply_tx,
+        chat_id: handler.chat_id,
+    };
+    process_turn_with_retry(
+        &turn_ctx,
+        "feishu",
+        &handler.open_id,
+        session_id,
+        &content,
+        &approval,
+        &NoopTurnHooks,
+        &sink,
+    )
+    .await
 }
 
 async fn send_ping(write: &GatewayWrite, seq: &mut u64, service_id: i32) -> Result<()> {
@@ -918,70 +884,6 @@ fn should_respond_in_group(
         return false;
     }
     mentions.iter().any(|m| mention_matches_bot(m, bot_open_id))
-}
-
-/// Author: gz
-struct FeishuApprovalBus {
-    waiters: Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
-}
-
-impl FeishuApprovalBus {
-    fn new() -> Self {
-        Self {
-            waiters: Mutex::new(std::collections::HashMap::new()),
-        }
-    }
-
-    async fn try_resolve(&self, open_id: &str, text: &str, user_allowed: bool) -> bool {
-        let mut waiters = self.waiters.lock().await;
-        if let Some(tx) = waiters.remove(open_id) {
-            let trimmed = text.trim();
-            let approved = user_allowed && is_approval_confirm(trimmed);
-            let denied = is_approval_deny(trimmed);
-            if approved {
-                let _ = tx.send(true);
-                return true;
-            }
-            if denied {
-                let _ = tx.send(false);
-                return true;
-            }
-            waiters.insert(open_id.to_string(), tx);
-            return false;
-        }
-        false
-    }
-}
-
-/// Author: gz
-struct FeishuApproval {
-    bus: Arc<FeishuApprovalBus>,
-    open_id: String,
-    reply_tx: mpsc::UnboundedSender<ReplyJob>,
-    chat_id: String,
-}
-
-#[async_trait::async_trait]
-impl ApprovalHandler for FeishuApproval {
-    async fn approve_bash(&self, command: &str) -> Result<bool> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.bus
-            .waiters
-            .lock()
-            .await
-            .insert(self.open_id.clone(), tx);
-        let _ = self.reply_tx.send(ReplyJob {
-            chat_id: self.chat_id.clone(),
-            content: command.to_string(),
-        });
-        match tokio::time::timeout(Duration::from_secs(300), rx).await {
-            Ok(Ok(v)) => Ok(v),
-            _ => {
-                self.bus.waiters.lock().await.remove(&self.open_id);
-                Ok(false)
-            }
-        }
-    }
 }
 
 #[cfg(test)]

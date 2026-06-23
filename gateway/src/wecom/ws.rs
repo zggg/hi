@@ -7,16 +7,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
-use hi_core::approval::ApprovalHandler;
 use hi_core::error::{Error, Result};
 use hi_core::{
-    channel_reply_chunks, is_approval_confirm, is_approval_deny, t, Channel, Locale, MessageId,
-    PersistedAgentHost, SessionId, WeComConfig,
-    DEFAULT_CHANNEL_CHUNK_BYTES,
+    t, Channel, Locale, MessageId, PersistedAgentHost, SessionId, WeComConfig,
 };
 
+use crate::common::{
+    ApprovalBus, ChannelApproval, ChannelMessenger, NoopTurnHooks, ReplySink, TurnContext,
+    process_turn_with_retry, reconnect_loop, warn_dm_policy,
+};
 use crate::run::default_turn_concurrency;
 
 /// Author: gz
@@ -80,17 +81,7 @@ impl WeComWsGateway {
         workdir: PathBuf,
         locale: Locale,
     ) -> Self {
-        if wecom.dm_policy == "open" {
-            warn!(
-                endpoint = %endpoint_id,
-                "wecom dm_policy=open: 所有用户可触发 Agent；生产环境请改用 allowlist"
-            );
-        } else if wecom.dm_policy == "allowlist" && wecom.allow_from.is_empty() {
-            warn!(
-                endpoint = %endpoint_id,
-                "wecom allowlist 为空: 无人可发消息，请在 hi.toml 配置 allow_from"
-            );
-        }
+        warn_dm_policy(&endpoint_id, &wecom.dm_policy, wecom.allow_from.is_empty());
         Self {
             ctx: WeComWsContext {
                 endpoint_id,
@@ -146,23 +137,13 @@ impl WeComWsGateway {
 
     pub async fn run(self) -> Result<()> {
         self.validate_config()?;
-        let url = self.ctx.wecom.websocket_url().to_string();
-        let mut backoff = Duration::from_secs(2);
-        loop {
-            match self.run_once(&url).await {
-                Ok(()) => backoff = Duration::from_secs(2),
-                Err(e) => {
-                    warn!(
-                        endpoint = %self.ctx.endpoint_id,
-                        error = %e,
-                        ?backoff,
-                        "wecom websocket disconnected"
-                    );
-                    tokio::time::sleep(backoff).await;
-                    backoff = (backoff * 2).min(Duration::from_secs(60));
-                }
-            }
-        }
+        let endpoint_id = self.ctx.endpoint_id.clone();
+        reconnect_loop(&endpoint_id, "wecom websocket", &self, |gw| {
+            let url = gw.ctx.wecom.websocket_url().to_string();
+            gw.run_once(&url)
+        })
+        .await;
+        Ok(())
     }
 
     async fn run_once(&self, url: &str) -> Result<()> {
@@ -184,7 +165,7 @@ impl WeComWsGateway {
         wait_for_ack(&mut read, &req_id, "subscribe").await?;
         info!(endpoint = %self.ctx.endpoint_id, "wecom subscribed — waiting for messages");
 
-        let approval_bus = Arc::new(WeComApprovalBus::new());
+        let approval_bus = Arc::new(ApprovalBus::new());
         let (reply_tx, mut reply_rx) = mpsc::unbounded_channel::<StreamReply>();
 
         loop {
@@ -330,7 +311,7 @@ async fn dispatch_frame(
     ctx: WeComWsContext,
     host: Arc<dyn PersistedAgentHost>,
     workdir: PathBuf,
-    approval_bus: Arc<WeComApprovalBus>,
+    approval_bus: Arc<ApprovalBus>,
     reply_tx: mpsc::UnboundedSender<StreamReply>,
 ) -> Result<()> {
     let frame: WsFrame = serde_json::from_str(text)
@@ -415,7 +396,7 @@ async fn handle_msg_callback(
     ctx: WeComWsContext,
     host: Arc<dyn PersistedAgentHost>,
     workdir: PathBuf,
-    approval_bus: Arc<WeComApprovalBus>,
+    approval_bus: Arc<ApprovalBus>,
     reply_tx: mpsc::UnboundedSender<StreamReply>,
 ) -> Result<()> {
     let body = frame.body.ok_or_else(|| Error::Message("missing body".into()))?;
@@ -488,24 +469,81 @@ async fn handle_msg_callback(
     )
     .await?;
 
-    process_user_turn(
-        &write,
-        UserTurnJob {
-            ctx,
-            userid: userid.to_string(),
-            content: content.to_string(),
-            req_id: req_id.clone(),
-            stream_id,
-            host,
-            workdir,
-            approval_bus,
-            reply_tx,
-        },
-    )
+    process_user_turn(UserTurnJob {
+        ctx,
+        userid: userid.to_string(),
+        content: content.to_string(),
+        req_id: req_id.clone(),
+        stream_id,
+        host,
+        workdir,
+        approval_bus,
+        reply_tx,
+        write,
+    })
     .await
 }
 
-const WECOM_TURN_MAX_ATTEMPTS: u32 = 2;
+/// Author: gz
+struct WeComMessenger {
+    reply_tx: mpsc::UnboundedSender<StreamReply>,
+    req_id: String,
+    stream_id: String,
+}
+
+#[async_trait::async_trait]
+impl ChannelMessenger for WeComMessenger {
+    async fn send_user_text(&self, content: &str) -> Result<()> {
+        let _ = self.reply_tx.send(StreamReply {
+            req_id: self.req_id.clone(),
+            stream_id: self.stream_id.clone(),
+            content: content.to_string(),
+            finish: false,
+        });
+        Ok(())
+    }
+}
+
+/// Author: gz
+struct WeComReplySink {
+    reply_tx: mpsc::UnboundedSender<StreamReply>,
+    write: WsWrite,
+    req_id: String,
+    stream_id: String,
+}
+
+#[async_trait::async_trait]
+impl ReplySink for WeComReplySink {
+    async fn deliver_parts(&self, parts: Vec<String>) -> Result<()> {
+        for (i, content) in parts.into_iter().enumerate() {
+            let stream_id = if i == 0 {
+                self.stream_id.clone()
+            } else {
+                format!("stream-{}", uuid::Uuid::new_v4())
+            };
+            let _ = self.reply_tx.send(StreamReply {
+                req_id: self.req_id.clone(),
+                stream_id,
+                content,
+                finish: true,
+            });
+        }
+        Ok(())
+    }
+
+    async fn deliver_failure(&self, message: &str) -> Result<()> {
+        send_stream(
+            &self.write,
+            &StreamReply {
+                req_id: self.req_id.clone(),
+                stream_id: self.stream_id.clone(),
+                content: message.to_string(),
+                finish: true,
+            },
+        )
+        .await
+    }
+}
 
 /// Author: gz
 struct UserTurnJob {
@@ -516,118 +554,45 @@ struct UserTurnJob {
     stream_id: String,
     host: Arc<dyn PersistedAgentHost>,
     workdir: PathBuf,
-    approval_bus: Arc<WeComApprovalBus>,
+    approval_bus: Arc<ApprovalBus>,
     reply_tx: mpsc::UnboundedSender<StreamReply>,
+    write: WsWrite,
 }
 
-async fn process_user_turn(write: &WsWrite, job: UserTurnJob) -> Result<()> {
+async fn process_user_turn(job: UserTurnJob) -> Result<()> {
+    let turn_ctx = TurnContext::new(
+        job.ctx.endpoint_id.clone(),
+        job.ctx.locale,
+        Arc::clone(&job.host),
+        job.workdir.clone(),
+    );
     let session_id = Channel::wecom_account_user(&job.ctx.account, &job.userid);
-    let mut last_err: Option<Error> = None;
-
-    for attempt in 1..=WECOM_TURN_MAX_ATTEMPTS {
-        match run_user_turn(&session_id, &job).await {
-            Ok(parts) => {
-                send_reply_parts(
-                    &job.reply_tx,
-                    &job.req_id,
-                    &job.stream_id,
-                    parts,
-                );
-                return Ok(());
-            }
-            Err(e) => {
-                if attempt < WECOM_TURN_MAX_ATTEMPTS {
-                    warn!(
-                        endpoint = %job.ctx.endpoint_id,
-                        userid = %job.userid,
-                        attempt,
-                        error = %e,
-                        "wecom turn failed, retrying"
-                    );
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                }
-                last_err = Some(e);
-            }
-        }
-    }
-
-    let err = last_err.unwrap_or_else(|| Error::Message("unknown wecom turn failure".into()));
-    record_dead_letter(&job.ctx, &job.userid, &job.content, &session_id, &err);
-    send_stream(
-        write,
-        &StreamReply {
+    let approval = ChannelApproval {
+        bus: Arc::clone(&job.approval_bus),
+        user_key: job.userid.clone(),
+        messenger: WeComMessenger {
+            reply_tx: job.reply_tx.clone(),
             req_id: job.req_id.clone(),
             stream_id: job.stream_id.clone(),
-            content: t(
-                job.ctx.locale,
-                MessageId::GatewayProcessFailed,
-                &[err.to_string()],
-            ),
-            finish: true,
         },
+    };
+    let sink = WeComReplySink {
+        reply_tx: job.reply_tx,
+        write: job.write,
+        req_id: job.req_id,
+        stream_id: job.stream_id,
+    };
+    process_turn_with_retry(
+        &turn_ctx,
+        "wecom",
+        &job.userid,
+        session_id,
+        &job.content,
+        &approval,
+        &NoopTurnHooks,
+        &sink,
     )
     .await
-}
-
-async fn run_user_turn(session_id: &SessionId, job: &UserTurnJob) -> Result<Vec<String>> {
-    let approval = WeComApproval {
-        bus: Arc::clone(&job.approval_bus),
-        userid: job.userid.clone(),
-        reply_tx: job.reply_tx.clone(),
-        req_id: job.req_id.clone(),
-        stream_id: job.stream_id.clone(),
-    };
-    let events = job
-        .host
-        .run_turn(
-            session_id.clone(),
-            job.workdir.clone(),
-            &job.content,
-            &approval,
-            None,
-        )
-        .await?;
-    Ok(channel_reply_chunks(
-        &events,
-        DEFAULT_CHANNEL_CHUNK_BYTES,
-    ))
-}
-
-fn send_reply_parts(
-    reply_tx: &mpsc::UnboundedSender<StreamReply>,
-    req_id: &str,
-    initial_stream_id: &str,
-    parts: Vec<String>,
-) {
-    for (i, content) in parts.into_iter().enumerate() {
-        let stream_id = if i == 0 {
-            initial_stream_id.to_string()
-        } else {
-            format!("stream-{}", uuid::Uuid::new_v4())
-        };
-        let _ = reply_tx.send(StreamReply {
-            req_id: req_id.to_string(),
-            stream_id,
-            content,
-            finish: true,
-        });
-    }
-}
-
-fn record_dead_letter(
-    ctx: &WeComWsContext,
-    userid: &str,
-    _content: &str,
-    session_id: &SessionId,
-    err: &Error,
-) {
-    error!(
-        endpoint = %ctx.endpoint_id,
-        %userid,
-        session = %session_id.0,
-        error = %err,
-        "wecom message dead letter"
-    );
 }
 
 async fn send_stream(write: &WsWrite, job: &StreamReply) -> Result<()> {
@@ -654,67 +619,4 @@ fn ws_send_err(e: tokio_tungstenite::tungstenite::Error) -> Error {
 
 fn new_req_id() -> String {
     format!("hi-{}", uuid::Uuid::new_v4())
-}
-
-/// Author: gz
-struct WeComApprovalBus {
-    waiters: Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
-}
-
-impl WeComApprovalBus {
-    fn new() -> Self {
-        Self {
-            waiters: Mutex::new(std::collections::HashMap::new()),
-        }
-    }
-
-    async fn try_resolve(&self, userid: &str, text: &str, user_allowed: bool) -> bool {
-        let mut waiters = self.waiters.lock().await;
-        if let Some(tx) = waiters.remove(userid) {
-            let trimmed = text.trim();
-            let approved = user_allowed && is_approval_confirm(trimmed);
-            let denied = is_approval_deny(trimmed);
-            if approved {
-                let _ = tx.send(true);
-                return true;
-            }
-            if denied {
-                let _ = tx.send(false);
-                return true;
-            }
-            waiters.insert(userid.to_string(), tx);
-            return false;
-        }
-        false
-    }
-}
-
-/// Author: gz
-struct WeComApproval {
-    bus: Arc<WeComApprovalBus>,
-    userid: String,
-    reply_tx: mpsc::UnboundedSender<StreamReply>,
-    req_id: String,
-    stream_id: String,
-}
-
-#[async_trait::async_trait]
-impl ApprovalHandler for WeComApproval {
-    async fn approve_bash(&self, command: &str) -> Result<bool> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.bus.waiters.lock().await.insert(self.userid.clone(), tx);
-        let _ = self.reply_tx.send(StreamReply {
-            req_id: self.req_id.clone(),
-            stream_id: self.stream_id.clone(),
-            content: command.to_string(),
-            finish: false,
-        });
-        match tokio::time::timeout(Duration::from_secs(300), rx).await {
-            Ok(Ok(v)) => Ok(v),
-            _ => {
-                self.bus.waiters.lock().await.remove(&self.userid);
-                Ok(false)
-            }
-        }
-    }
 }
