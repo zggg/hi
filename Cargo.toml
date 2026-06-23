@@ -17,7 +17,7 @@ authors = ["hi contributors"]
 readme = "README.md"
 repository = "https://github.com/zggg/hi"
 homepage = "https://github.com/zggg/hi"
-description = "Ultra-lightweight personal AI assistant — TUI, CLI chat, and optional IM gateway sharing one Agent core"
+description = "Rust personal AI agent — ultra-lightweight TUI, CLI chat, and optional IM gateway sharing one Agent core"
 keywords = ["ai", "agent", "llm", "tui", "cli"]
 categories = ["command-line-utilities"]
 

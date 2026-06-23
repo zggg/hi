@@ -1,6 +1,6 @@
 # hi
 
-Rust personal AI assistant: **single binary** · local TUI · optional IM gateway · one shared Agent core
+**Rust AI agent** — ultra-lightweight personal assistant: **single binary** · local TUI · optional IM gateway · one shared Agent core
 
 > **Personal learning project** — for practicing Rust, agent runtimes, TUI, and messaging-channel integration. Features evolve continuously; **not production-ready**. Feedback welcome; do not rely on it for critical workloads.
 

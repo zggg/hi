@@ -4,7 +4,7 @@
 
 English: [README.en.md](README.en.md)
 
-Rust 个人 AI 助手：**单二进制** · 本地 TUI · 可选 IM Gateway · 同一 Agent 核心
+**Rust AI Agent** — 轻量个人 AI 助手：**单二进制** · 本地 TUI · 可选 IM Gateway · 同一 Agent 核心
 
 > **个人学习项目** — 用于练习 Rust、Agent 运行时、TUI 与消息渠道集成。功能持续迭代，**不承诺生产可用**；欢迎交流，请勿作为关键业务依赖。
 
