@@ -10,7 +10,7 @@ use tokio::sync::{Mutex, Semaphore};
 use tracing::{debug, info, warn};
 
 use crate::common::{
-    ApprovalBus, ChannelApproval, ChannelMessenger, IdDedup, ReplySink, TurnContext,
+    ApprovalBus, ChannelApproval, ChannelMessenger, IdDedup, ReplySink, TurnContext, TurnRequest,
     TurnHookContext, TurnHooks, process_turn_with_retry, spawn_bounded_turn,
 };
 use crate::run::default_turn_concurrency;
@@ -420,11 +420,13 @@ impl WeixinGateway {
         };
         process_turn_with_retry(
             &turn_ctx,
-            "weixin",
-            &hooks.sender_id,
-            session_id,
-            &content,
-            &approval,
+            &TurnRequest {
+                channel: "weixin",
+                user_key: &hooks.sender_id,
+                session_id,
+                content: &content,
+                approval: &approval,
+            },
             &hooks,
             &sink,
         )

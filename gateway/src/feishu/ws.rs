@@ -18,7 +18,7 @@ use hi_core::{
 
 use crate::common::{
     ApprovalBus, ChannelApproval, ChannelMessenger, NoopTurnHooks, ReplySink, TimedDedup,
-    TurnContext, process_turn_with_retry, reconnect_loop, warn_dm_policy,
+    TurnContext, TurnRequest, process_turn_with_retry, reconnect_loop, warn_dm_policy,
 };
 use crate::common::config_warn::warn_feishu_mention;
 use crate::run::default_turn_concurrency;
@@ -753,11 +753,13 @@ async fn process_user_turn(handler: MessageHandlerCtx, content: String) -> Resul
     };
     process_turn_with_retry(
         &turn_ctx,
-        "feishu",
-        &handler.open_id,
-        session_id,
-        &content,
-        &approval,
+        &TurnRequest {
+            channel: "feishu",
+            user_key: &handler.open_id,
+            session_id,
+            content: &content,
+            approval: &approval,
+        },
         &NoopTurnHooks,
         &sink,
     )
