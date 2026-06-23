@@ -20,7 +20,9 @@ pub use dedup::{IdDedup, TimedDedup};
 pub use hooks::{NoopTurnHooks, TurnHookContext, TurnHooks};
 pub use messenger::ChannelMessenger;
 pub use reply::ReplySink;
-pub use turn::{run_agent_turn, process_turn_with_retry, TurnContext, DEFAULT_TURN_MAX_ATTEMPTS};
+pub use turn::{
+    run_agent_turn, process_turn_with_retry, TurnContext, TurnRequest, DEFAULT_TURN_MAX_ATTEMPTS,
+};
 pub use user_error::{normalize_reply_parts, user_visible_error};
 pub use ws_lifecycle::reconnect_loop;
 

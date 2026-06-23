@@ -16,7 +16,7 @@ use hi_core::{
 
 use crate::common::{
     ApprovalBus, ChannelApproval, ChannelMessenger, NoopTurnHooks, ReplySink, TurnContext,
-    process_turn_with_retry, reconnect_loop, warn_dm_policy,
+    TurnRequest, process_turn_with_retry, reconnect_loop, warn_dm_policy,
 };
 use crate::run::default_turn_concurrency;
 
@@ -585,11 +585,13 @@ async fn process_user_turn(job: UserTurnJob) -> Result<()> {
     };
     process_turn_with_retry(
         &turn_ctx,
-        "wecom",
-        &job.userid,
-        session_id,
-        &job.content,
-        &approval,
+        &TurnRequest {
+            channel: "wecom",
+            user_key: &job.userid,
+            session_id,
+            content: &job.content,
+            approval: &approval,
+        },
         &NoopTurnHooks,
         &sink,
     )

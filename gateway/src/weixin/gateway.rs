@@ -11,7 +11,7 @@ use tracing::{debug, info, warn};
 
 use crate::common::{
     ApprovalBus, ChannelApproval, ChannelMessenger, IdDedup, ReplySink, TurnContext,
-    TurnHookContext, TurnHooks, process_turn_with_retry, spawn_bounded_turn,
+    TurnHookContext, TurnHooks, TurnRequest, process_turn_with_retry, spawn_bounded_turn,
 };
 use crate::run::default_turn_concurrency;
 use crate::weixin::ilink::{
@@ -420,11 +420,13 @@ impl WeixinGateway {
         };
         process_turn_with_retry(
             &turn_ctx,
-            "weixin",
-            &hooks.sender_id,
-            session_id,
-            &content,
-            &approval,
+            &TurnRequest {
+                channel: "weixin",
+                user_key: &hooks.sender_id,
+                session_id,
+                content: &content,
+                approval: &approval,
+            },
             &hooks,
             &sink,
         )
