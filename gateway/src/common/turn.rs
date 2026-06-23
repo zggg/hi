@@ -45,17 +45,6 @@ impl TurnContext {
     }
 }
 
-/// Per-message inputs for [`process_turn_with_retry`].
-///
-/// Author: gz
-pub struct TurnRequest<'a> {
-    pub channel: &'a str,
-    pub user_key: &'a str,
-    pub session_id: SessionId,
-    pub content: &'a str,
-    pub approval: &'a dyn ApprovalHandler,
-}
-
 /// Run one agent turn and split assistant output into channel-sized chunks.
 ///
 /// Author: gz
@@ -97,7 +86,11 @@ pub async fn run_agent_turn(
 /// Author: gz
 pub async fn process_turn_with_retry<S, H>(
     ctx: &TurnContext,
-    req: &TurnRequest<'_>,
+    channel: &str,
+    user_key: &str,
+    session_id: SessionId,
+    content: &str,
+    approval: &dyn ApprovalHandler,
     hooks: &H,
     sink: &S,
 ) -> Result<()>
@@ -107,7 +100,7 @@ where
 {
     let hook_ctx = TurnHookContext {
         locale: ctx.locale,
-        user_key: req.user_key,
+        user_key,
     };
     hooks.on_turn_start(&hook_ctx).await?;
     let wall_timeout = hooks.wall_timeout(&hook_ctx).await?;
@@ -115,15 +108,7 @@ where
     let mut last_err: Option<Error> = None;
     for attempt in 1..=ctx.max_attempts {
         hooks.before_run_turn(&hook_ctx).await?;
-        match run_agent_turn(
-            ctx,
-            &req.session_id,
-            req.content,
-            req.approval,
-            wall_timeout,
-        )
-        .await
-        {
+        match run_agent_turn(ctx, &session_id, content, approval, wall_timeout).await {
             Ok(mut parts) => {
                 hooks.after_run_turn(&hook_ctx).await?;
                 parts = hooks.normalize_parts(ctx.locale, parts);
@@ -139,9 +124,9 @@ where
             Err(e) => {
                 if attempt < ctx.max_attempts {
                     warn!(
-                        channel = req.channel,
+                        channel,
                         endpoint = %ctx.endpoint_id,
-                        user_key = req.user_key,
+                        user_key,
                         attempt,
                         error = %e,
                         "gateway turn failed, retrying"
@@ -153,16 +138,8 @@ where
         }
     }
 
-    let err = last_err.unwrap_or_else(|| {
-        Error::Message(format!("unknown {} turn failure", req.channel))
-    });
-    record_dead_letter(
-        req.channel,
-        &ctx.endpoint_id,
-        req.user_key,
-        &req.session_id,
-        &err,
-    );
+    let err = last_err.unwrap_or_else(|| Error::Message(format!("unknown {channel} turn failure")));
+    record_dead_letter(channel, &ctx.endpoint_id, user_key, &session_id, &err);
     let failure = t(
         ctx.locale,
         MessageId::GatewayProcessFailed,

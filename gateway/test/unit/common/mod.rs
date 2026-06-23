@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 
 use super::{
     ApprovalBus, ChannelApproval, ChannelMessenger, IdDedup, NoopTurnHooks, ReplySink, TimedDedup,
-    TurnContext, TurnRequest, normalize_reply_parts, process_turn_with_retry, user_visible_error,
+    TurnContext, normalize_reply_parts, process_turn_with_retry, user_visible_error,
 };
 
 struct RecordingMessenger {
@@ -112,13 +112,11 @@ async fn process_turn_records_failure_after_retries() {
     };
     process_turn_with_retry(
         &ctx,
-        &TurnRequest {
-            channel: "test",
-            user_key: "u1",
-            session_id: SessionId("test:u1".into()),
-            content: "hi",
-            approval: &approval,
-        },
+        "test",
+        "u1",
+        SessionId("test:u1".into()),
+        "hi",
+        &approval,
         &NoopTurnHooks,
         &sink,
     )
