@@ -1,6 +1,6 @@
 # 结绳记事：hi 长期记忆详细设计
 
-> **状态**：proposed（M7 实施方案）  
+> **状态**：accepted（M7 已落地，2026-06-23）  
 > **作者**：gz  
 > **日期**：2026-06-04  
 > **关联**：[m7-memory-system.md](../exec-plans/active/m7-memory-system.md)、[core-beliefs.md](../design-docs/core-beliefs.md)
@@ -9,7 +9,7 @@
 
 ### 1.1 背景
 
-hi 是个人 AI 助手（本地 TUI + 消息渠道 Gateway）。当前持久化仅有 **会话 transcript**（`messages` 表）与 M5 的 **有损压缩**（LLM 摘要 + `replace_messages` 删除原文）。这对「跨天、跨会话仍记得住用户是谁、偏好什么、做过什么决定」不够用。
+hi 是个人 AI 助手（本地 TUI + 消息渠道 Gateway）。M7 实施前，持久化仅有 **会话 transcript**（`messages` 表）与 M5 的 **有损压缩**（LLM 摘要 + `replace_messages` 删除原文），对「跨天、跨会话仍记得住用户是谁、偏好什么、做过什么决定」不够用。**M7 已落地**：压缩改为 `mark_out_of_context`（append-only），并引入结绳长期记忆层。
 
 ### 1.2 目标
 
@@ -728,32 +728,39 @@ run_turn(user_message):
 
 ### Phase A：会话永久保留（优先）
 
-- [ ] `messages.in_context` 迁移；现有数据默认 `1`
-- [ ] `load_context_messages` / `load_all_messages`
-- [ ] `update_system_message`；workdir 同步改单行 UPDATE
-- [ ] `mark_out_of_context` + `session_compressions` 表
-- [ ] `maybe_compress` 改造：**废止** compress 路径上的 `replace_messages`
-- [ ] `hi session list/show/export/compressions list`
-- [ ] architecture-test：禁止 agent/context 调用 `replace_messages` 与 `DELETE messages`
+- [x] `messages.in_context` 迁移；现有数据默认 `1`
+- [x] `load_context_messages` / `load_all_messages`
+- [x] `update_system_message`；workdir 同步改单行 UPDATE
+- [x] `mark_out_of_context` + `session_compressions` 表
+- [x] `maybe_compress` 改造：**废止** compress 路径上的 `replace_messages`
+- [x] `hi session list/show/export/compressions list`
+- [x] architecture-test：禁止 agent/context 调用 `replace_messages` 与 `DELETE messages`
 
 ### Phase B：结绳基础设施
 
-- [ ] `memory_owners`, `knots`, `knot_events`, `knot_provenance`
-- [ ] `MemoryConfig` + `hi memory list/add/forget/reinforce`
+- [x] `memory_owners`, `knots`, `knot_events`, `knot_provenance`
+- [x] `MemoryConfig` + `hi memory list/add/forget/reinforce/extract`
 
 ### Phase C：注入与跨会话
 
-- [ ] `build_knot_system_block` + Agent 注入
-- [ ] clarity 衰减；跨 `chat`/`tui` 验证（owner=local）
+- [x] `build_knot_system_block` + Agent 注入
+- [x] clarity 衰减；跨 `chat`/`tui` 验证（owner=local）
 
 ### Phase D：抽取
 
-- [ ] `knot_extract`；`extract_after_turn`；压缩时联动抽结
-- [ ] 事件 `SessionCompressed` / `KnotsExtracted`
+- [x] `knot_extract`；`extract_after_turn`；压缩时联动抽结
+- [x] 事件 `SessionCompressed` / `KnotsExtracted`
 
-### Phase E（可选）
+### Phase E
 
-- [ ] `hi session uncompress`；wecom→local；向量检索；`memory_search` 工具
+- [x] `memory_search` 工具 + 基线注入（`inject_baseline_only`）
+- [x] `memory_write` 工具（Agent 主动记，默认开启）
+
+### M7+（可选，未做）
+
+- [ ] `hi session uncompress`
+- [ ] wecom→local owner 映射
+- [ ] 向量检索
 
 ---
 
@@ -828,5 +835,5 @@ cargo test -p architecture-tests
 ## 18. 文档与索引
 
 - 本文件：`docs/design/2026-06-04-knot-memory-design.md`
-- ExecPlan：[m7-memory-system.md](../exec-plans/active/m7-memory-system.md) 引用本设计
-- 实施后：更新 ARCHITECTURE.md M7 行、AGENTS.md 命令表
+- ExecPlan：[m7-memory-system.md](../exec-plans/active/m7-memory-system.md)（M7 ✅ 已关闭）
+- ARCHITECTURE.md M7 行、AGENTS.md 命令表已同步（2026-06-23）

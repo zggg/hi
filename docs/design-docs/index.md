@@ -3,7 +3,7 @@
 | ID | 标题 | 状态 | 文件 |
 |----|------|------|------|
 | — | 初始设计（2026-05-22） | accepted | [../design/2026-05-22-hi-agent-design.md](../design/2026-05-22-hi-agent-design.md) |
-| — | 结绳记事长期记忆（2026-06-04） | proposed | [../design/2026-06-04-knot-memory-design.md](../design/2026-06-04-knot-memory-design.md) |
+| — | 结绳记事长期记忆（2026-06-04） | accepted | [../design/2026-06-04-knot-memory-design.md](../design/2026-06-04-knot-memory-design.md) |
 | 0001 | 记忆抽取触发策略 | accepted | [0001-memory-extraction-triggers.md](0001-memory-extraction-triggers.md) |
 | — | Harness 脚手架初始化 | accepted | AGENTS.md + docs/architecture/LAYERS.md |
 

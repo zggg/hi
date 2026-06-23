@@ -40,7 +40,7 @@ hi 是 **极致轻量化的个人 AI 助手**（Cargo Workspace，5 个 crate）
 - **M4 完成**：消息渠道 Gateway（企业微信智能机器人 WebSocket；会话 `wecom:{userid}`）
 - **M5 完成**：上下文压缩、Anthropic / Ollama Provider
 - **M6 完成**：`hi setup` / `hi gateway setup` 交互向导、统一 `~/.hi/hi.toml`
-- **M7 进行中**：结绳长期记忆、`memory_search` / `memory_write`、会话 append-only（见 [m7-memory-system.md](docs/exec-plans/active/m7-memory-system.md)）
+- **M7 完成**：结绳长期记忆、`memory_search` / `memory_write`、会话 append-only（见 [m7-memory-system.md](docs/exec-plans/active/m7-memory-system.md)）
 - **M8 MVP 完成**：个人微信 iLink Gateway（实验性；真实环境联调见 [m8-weixin-ilink-gateway.md](docs/exec-plans/active/m8-weixin-ilink-gateway.md)）
 
 ## 进一步阅读

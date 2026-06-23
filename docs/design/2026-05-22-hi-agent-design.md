@@ -360,7 +360,7 @@ pub trait AgentClient {
 | **M4** ✅ | 企微 WebSocket + 发消息 + `dm_policy`               |
 | **M5** ✅ | 上下文压缩 + 多 Provider                             |
 | **M6** ✅ | `hi config` 向导、文档                              |
-| **M7** 📋 | 记忆体系：归档/可恢复压缩、长期记忆（待排期，见 [m7-memory-system.md](../exec-plans/active/m7-memory-system.md)） |
+| **M7** ✅ | 记忆体系：结绳长期记忆、`memory_search` / `memory_write`、会话 append-only（见 [m7-memory-system.md](../exec-plans/active/m7-memory-system.md)） |
 
 
 ---

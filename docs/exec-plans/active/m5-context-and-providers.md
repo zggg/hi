@@ -12,9 +12,13 @@ This ExecPlan is a living document.
 - [x] `[context]` 配置段
 - [x] `core/src/context.rs` — token 估算 + `maybe_compress`
 - [x] `AgentLoop` 集成 + `ContextCompressed` 事件
-- [x] `SessionStore::replace_messages` 压缩后落库
+- [x] `SessionStore::replace_messages` 压缩后落库（M5；**M7 起压缩改 `mark_out_of_context`，不再调用 `replace_messages`**）
 - [x] `AnthropicProvider` + `OllamaProvider`
 - [x] `runtime.rs` provider 工厂
+
+## 注（M7 后）
+
+压缩持久化路径已由 M7 改为 append-only（`in_context` + `session_compressions`）。见 [m7-memory-system.md](m7-memory-system.md)。
 
 ## Validation
 

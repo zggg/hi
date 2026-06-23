@@ -46,7 +46,7 @@ hi setup
 - **轻量** — SQLite + 类型 + 关键词，不依赖向量库
 - **慢写快读** — 回合结束或压缩时 LLM 抽取；注入时只做 SQL
 - **可遗忘** — `clarity` 衰减；支持手动 add / 强化 / 删除
-- **按需检索** — `memory_search` 查待办与决定；system 默认只注入偏好与事实基线
+- **按需检索** — `memory_search` 查待办与决定；`memory_write` 供 Agent 主动记；system 默认只注入偏好与事实基线
 
 ```bash
 hi memory list
