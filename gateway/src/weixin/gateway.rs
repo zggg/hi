@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use hi_core::error::{Error, Result};
-use hi_core::{t, Channel, Locale, MessageId, PersistedAgentHost, SessionId, WeixinConfig};
+use hi_core::{t, Channel, Locale, MessageId, PersistedAgentHost, WeixinConfig};
 use tokio::sync::{Mutex, Semaphore};
 use tracing::{debug, info, warn};
 
@@ -273,11 +273,13 @@ impl WeixinGateway {
         .await;
 
         let gateway = self.clone();
-        let client = client.clone_ref();
+        let client_for_busy = client.clone_ref();
+        let client_for_turn = client.clone_ref();
         spawn_bounded_turn(
             Arc::clone(&self.turn_semaphore),
             {
                 let gateway = gateway.clone();
+                let client = client_for_busy;
                 let sender_id = sender_id.clone();
                 let shared_token = Arc::clone(&shared_token);
                 move || {
@@ -304,7 +306,7 @@ impl WeixinGateway {
             },
             move || {
                 let gateway = gateway.clone();
-                let client = client.clone_ref();
+                let client = client_for_turn;
                 let sender_id = sender_id.clone();
                 let shared_token = Arc::clone(&shared_token);
                 async move {

@@ -11,7 +11,7 @@ use tracing::{debug, info, warn};
 
 use hi_core::error::{Error, Result};
 use hi_core::{
-    t, Channel, Locale, MessageId, PersistedAgentHost, SessionId, WeComConfig,
+    t, Channel, Locale, MessageId, PersistedAgentHost, WeComConfig,
 };
 
 use crate::common::{
@@ -138,18 +138,19 @@ impl WeComWsGateway {
     pub async fn run(self) -> Result<()> {
         self.validate_config()?;
         let endpoint_id = self.ctx.endpoint_id.clone();
-        reconnect_loop(&endpoint_id, "wecom websocket", &self, |gw| {
-            let url = gw.ctx.wecom.websocket_url().to_string();
-            gw.run_once(&url)
+        let gateway = self;
+        reconnect_loop(&endpoint_id, "wecom websocket", || {
+            let url = gateway.ctx.wecom.websocket_url().to_string();
+            gateway.run_once(url)
         })
         .await;
         Ok(())
     }
 
-    async fn run_once(&self, url: &str) -> Result<()> {
+    async fn run_once(&self, url: String) -> Result<()> {
         let secret = self.validate_config()?;
         let wecom = &self.ctx.wecom;
-        let (ws, _) = connect_async(url)
+        let (ws, _) = connect_async(&url)
             .await
             .map_err(|e| Error::Message(format!("websocket connect: {e}")))?;
         info!(

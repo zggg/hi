@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::sync::Mutex;
@@ -6,15 +7,16 @@ use tokio::sync::Mutex;
 /// String-key dedup with TTL eviction (Feishu message_id).
 ///
 /// Author: gz
+#[derive(Clone)]
 pub struct TimedDedup {
-    seen: Mutex<HashMap<String, Instant>>,
+    seen: Arc<Mutex<HashMap<String, Instant>>>,
     ttl: Duration,
 }
 
 impl TimedDedup {
     pub fn new(ttl: Duration) -> Self {
         Self {
-            seen: Mutex::new(HashMap::new()),
+            seen: Arc::new(Mutex::new(HashMap::new())),
             ttl,
         }
     }
@@ -35,15 +37,16 @@ impl TimedDedup {
 /// Numeric-id dedup with size cap (Weixin message_id).
 ///
 /// Author: gz
+#[derive(Clone)]
 pub struct IdDedup {
-    seen: Mutex<HashSet<i64>>,
+    seen: Arc<Mutex<HashSet<i64>>>,
     max_entries: usize,
 }
 
 impl IdDedup {
     pub fn new(max_entries: usize) -> Self {
         Self {
-            seen: Mutex::new(HashSet::new()),
+            seen: Arc::new(Mutex::new(HashSet::new())),
             max_entries,
         }
     }

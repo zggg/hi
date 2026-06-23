@@ -9,11 +9,11 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use hi_core::error::{Error, Result};
 use hi_core::{
-    Channel, FeishuConfig, Locale, PersistedAgentHost, SessionId,
+    Channel, FeishuConfig, Locale, PersistedAgentHost,
 };
 
 use crate::common::{
@@ -251,7 +251,8 @@ impl FeishuWsGateway {
     pub async fn run(self) -> Result<()> {
         self.validate_config()?;
         let endpoint_id = self.ctx.endpoint_id.clone();
-        reconnect_loop(&endpoint_id, "feishu gateway", &self, |gw| gw.run_once()).await;
+        let gateway = self;
+        reconnect_loop(&endpoint_id, "feishu gateway", || gateway.run_once()).await;
         Ok(())
     }
 
