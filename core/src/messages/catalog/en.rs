@@ -134,6 +134,10 @@ pub(super) fn format_en(id: MessageId, args: &[String]) -> String {
         MessageId::GatewayThinking => "Thinking…".into(),
         MessageId::GatewayBusy => "Still processing your last message — please wait…".into(),
         MessageId::GatewayTurnAck => "Got it — thinking…".into(),
+        MessageId::GatewayTurnWallTimeout => format!(
+            "Timed out after {}s — please try again later.",
+            arg(args, 0)
+        ),
         MessageId::GatewayProcessFailed => format!(
             "Something went wrong: {}\nPlease try again later.",
             arg(args, 0)

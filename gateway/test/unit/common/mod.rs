@@ -8,7 +8,8 @@ use tokio::sync::Mutex;
 
 use super::{
     ApprovalBus, ChannelApproval, ChannelMessenger, IdDedup, NoopTurnHooks, ReplySink, TimedDedup,
-    TurnContext, TurnRequest, normalize_reply_parts, process_turn_with_retry, user_visible_error,
+    TurnContext, TurnRequest, is_turn_wall_timeout, normalize_reply_parts, process_turn_with_retry,
+    turn_wall_timeout_error, user_visible_error,
 };
 
 struct RecordingMessenger {
@@ -155,4 +156,28 @@ fn user_visible_error_shortens_transport_failure() {
         "无法连接大模型服务，请检查网络、代理，以及 hi.toml 中的 base_url。\n详情：timeout".into(),
     );
     assert!(user_visible_error(Locale::Zh, &err).contains("无法连接大模型服务"));
+}
+
+#[test]
+fn turn_wall_timeout_marker() {
+    use hi_core::{t, Locale, MessageId};
+
+    let err = turn_wall_timeout_error(std::time::Duration::from_secs(180));
+    assert!(is_turn_wall_timeout(&err));
+    assert_eq!(
+        err.render(Locale::En),
+        t(
+            Locale::En,
+            MessageId::GatewayTurnWallTimeout,
+            &["180".into()]
+        )
+    );
+    assert_eq!(
+        err.render(Locale::Zh),
+        t(
+            Locale::Zh,
+            MessageId::GatewayTurnWallTimeout,
+            &["180".into()]
+        )
+    );
 }

@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -11,7 +12,8 @@ use tracing::{debug, info, warn};
 
 use crate::common::{
     ApprovalBus, ChannelApproval, ChannelMessenger, IdDedup, ReplySink, TurnContext,
-    TurnHookContext, TurnHooks, TurnRequest, process_turn_with_retry, spawn_bounded_turn,
+    TurnHookContext, TurnHooks, TurnRequest, DEFAULT_TURN_MAX_ATTEMPTS, process_turn_with_retry,
+    spawn_bounded_turn, turn_pipeline_watchdog_timeout,
 };
 use crate::run::default_turn_concurrency;
 use crate::weixin::ilink::{
@@ -310,9 +312,51 @@ impl WeixinGateway {
                 let sender_id = sender_id.clone();
                 let shared_token = Arc::clone(&shared_token);
                 async move {
+                    let turn_done = Arc::new(AtomicBool::new(false));
+                    let watchdog = turn_pipeline_watchdog_timeout(
+                        Some(TURN_WALL_TIMEOUT),
+                        DEFAULT_TURN_MAX_ATTEMPTS,
+                    )
+                    .map(|timeout| {
+                        let gateway = gateway.clone();
+                        let client = client.clone_ref();
+                        let sender_id = sender_id.clone();
+                        let shared_token = Arc::clone(&shared_token);
+                        let turn_done = Arc::clone(&turn_done);
+                        tokio::spawn(async move {
+                            tokio::time::sleep(timeout).await;
+                            if turn_done.load(Ordering::Acquire) {
+                                return;
+                            }
+                            warn!(
+                                endpoint = %gateway.ctx.endpoint_id,
+                                sender_id = %sender_id,
+                                timeout_secs = timeout.as_secs(),
+                                "weixin turn pipeline watchdog fired"
+                            );
+                            let token = shared_token.lock().await.clone();
+                            deliver_user_message(
+                                &client,
+                                &sender_id,
+                                &token,
+                                &t(
+                                    gateway.ctx.locale,
+                                    MessageId::GatewayTurnWallTimeout,
+                                    &[TURN_WALL_TIMEOUT.as_secs().to_string()],
+                                ),
+                            )
+                            .await;
+                            gateway.cleanup_active_sender(&sender_id).await;
+                        })
+                    });
+
                     let result = gateway
                         .process_user_turn(client, sender_id.clone(), text, shared_token)
                         .await;
+                    turn_done.store(true, Ordering::Release);
+                    if let Some(watchdog) = watchdog {
+                        watchdog.abort();
+                    }
                     gateway.cleanup_active_sender(&sender_id).await;
                     if let Err(e) = result {
                         warn!(

@@ -16,7 +16,7 @@ pub fn normalize_reply_parts(locale: Locale, parts: Vec<String>) -> Vec<String> 
 ///
 /// Author: gz
 pub fn user_visible_error(locale: Locale, err: &Error) -> String {
-    let raw = err.to_string();
+    let raw = err.render(locale);
     if raw.contains("error sending request") || raw.contains("cannot reach LLM service") {
         t(locale, MessageId::LlmTransportError, &[raw])
     } else if raw.len() > 400 {

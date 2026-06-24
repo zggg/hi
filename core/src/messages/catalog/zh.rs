@@ -127,6 +127,10 @@ pub(super) fn format_zh(id: MessageId, args: &[String]) -> String {
         MessageId::GatewayThinking => "思考中…".into(),
         MessageId::GatewayBusy => "上一条还在处理，请稍候…".into(),
         MessageId::GatewayTurnAck => "收到，思考中…".into(),
+        MessageId::GatewayTurnWallTimeout => format!(
+            "处理超时（{} 秒），请稍后重试。",
+            arg(args, 0)
+        ),
         MessageId::GatewayProcessFailed => format!(
             "处理失败：{}\n请稍后重试。",
             arg(args, 0)

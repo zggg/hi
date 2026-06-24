@@ -21,7 +21,8 @@ pub use hooks::{NoopTurnHooks, TurnHookContext, TurnHooks};
 pub use messenger::ChannelMessenger;
 pub use reply::ReplySink;
 pub use turn::{
-    run_agent_turn, process_turn_with_retry, TurnContext, TurnRequest, DEFAULT_TURN_MAX_ATTEMPTS,
+    is_turn_wall_timeout, run_agent_turn, process_turn_with_retry, turn_pipeline_watchdog_timeout,
+    turn_wall_timeout_error, TurnContext, TurnRequest, DEFAULT_TURN_MAX_ATTEMPTS,
 };
 pub use user_error::{normalize_reply_parts, user_visible_error};
 pub use ws_lifecycle::reconnect_loop;

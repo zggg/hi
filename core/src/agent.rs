@@ -469,8 +469,27 @@ impl<C: LlmClient> AgentLoop<C> {
         Ok(())
     }
 
-    fn commit_turn(&mut self) -> Result<()> {
-        self.persist_new_messages()
+    async fn commit_turn_async(&mut self) -> Result<()> {
+        let Some(store) = &self.store else {
+            return self.persist_new_messages();
+        };
+        let Some(session) = &self.session else {
+            return Ok(());
+        };
+        if self.persisted_len >= self.history.len() {
+            return Ok(());
+        }
+        let session_id = session.session_id.clone();
+        let new_messages: Vec<ChatMessage> = self.history[self.persisted_len..].to_vec();
+        let store = Arc::clone(store);
+        let new_ids = tokio::task::spawn_blocking(move || {
+            store.append_messages(&session_id, &new_messages)
+        })
+        .await
+        .map_err(|e| crate::error::Error::Message(format!("commit turn join: {e}")))??;
+        self.message_ids.extend(new_ids);
+        self.persisted_len = self.history.len();
+        Ok(())
     }
 
     fn rollback_turn(&mut self, checkpoint: usize) -> Result<()> {
@@ -644,7 +663,7 @@ impl<C: LlmClient> AgentLoop<C> {
         {
             Ok(events) => {
                 if Self::turn_should_commit(&events) {
-                    self.commit_turn()?;
+                    self.commit_turn_async().await?;
                 } else {
                     self.rollback_turn(checkpoint)?;
                 }

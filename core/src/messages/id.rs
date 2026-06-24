@@ -53,6 +53,7 @@ pub enum MessageId {
     GatewayThinking,
     GatewayBusy,
     GatewayTurnAck,
+    GatewayTurnWallTimeout,    // {0} seconds
     GatewayProcessFailed,      // {0} detail
     GatewayUnsupportedMessage, // {0} kind
     GatewayCheckOkWecom,
