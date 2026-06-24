@@ -211,11 +211,7 @@ fn prompt_ai(
         session.input_optional(&t(session.locale(), MessageId::SetupBaseUrlPrompt, &[]), base_default)?
     };
 
-    let model = match model_presets::choose_model(session, preset.id, &current.model)? {
-        ModelPick::Back => return Ok(None),
-        ModelPick::Model(m) => m,
-    };
-
+    // api_key 提前到选模型之前：动态拉取模型列表需要 base_url + key。
     let api_key = if provider == "ollama" {
         String::new()
     } else {
@@ -226,6 +222,17 @@ fn prompt_ai(
         )?
     };
 
+    let model = match choose_model_with_fetch(
+        session,
+        preset,
+        base_url.as_deref(),
+        &api_key,
+        &current.model,
+    )? {
+        ModelPick::Back => return Ok(None),
+        ModelPick::Model(m) => m,
+    };
+
     Ok(Some(AiConfig {
         default: instance,
         provider,
@@ -234,6 +241,90 @@ fn prompt_ai(
         api_key,
         providers: Default::default(),
     }))
+}
+
+/// 选模型：先尝试按 provider 动态拉取（openai-compat / anthropic），
+/// 拉取成功用真实列表，失败或不支持则回退到内置 curated 列表 / 手动输入。
+fn choose_model_with_fetch(
+    session: &Session,
+    preset: &ProviderPreset,
+    base_url: Option<&str>,
+    api_key: &str,
+    current: &str,
+) -> anyhow::Result<ModelPick> {
+    if let Some(models) = fetch_models(session, preset, base_url, api_key) {
+        if !models.is_empty() {
+            return model_presets::pick_from_ids(session, &models, current);
+        }
+    }
+    model_presets::choose_model(session, preset.id, current)
+}
+
+/// 动态拉取可用模型列表；不支持的 provider 返回 `None`，失败时给出回退提示并返回 `None`。
+fn fetch_models(
+    session: &Session,
+    preset: &ProviderPreset,
+    base_url: Option<&str>,
+    api_key: &str,
+) -> Option<Vec<String>> {
+    let provider = preset.provider;
+    if provider != "openai-compat" && provider != "anthropic" && provider != "ollama" {
+        return None;
+    }
+    let locale = session.locale();
+    let base = base_url.unwrap_or("").to_string();
+    let key = api_key.to_string();
+    let is_anthropic = provider == "anthropic";
+    let is_ollama = provider == "ollama";
+
+    let result = session.spinner(&t(locale, MessageId::SetupModelFetching, &[]), || {
+        let fetched = block_on(async move {
+            if is_ollama {
+                hi_ai::model_listing::list_ollama(&base).await
+            } else if is_anthropic {
+                hi_ai::model_listing::list_anthropic(&base, &key).await
+            } else {
+                hi_ai::model_listing::list_openai_compat(&base, &key).await
+            }
+        });
+        let done = match &fetched {
+            Ok(models) => t(locale, MessageId::SetupModelFetchDone, &[models.len().to_string()]),
+            Err(_) => t(locale, MessageId::SetupModelFetchFailedTitle, &[]),
+        };
+        (fetched, done)
+    });
+
+    match result {
+        Ok(models) if !models.is_empty() => Some(models),
+        Ok(_) => None,
+        Err(e) => {
+            let _ = session.note(
+                &t(locale, MessageId::SetupModelFetchFailedTitle, &[]),
+                &t(locale, MessageId::SetupModelFetchFailedNote, &[e.to_string()]),
+            );
+            None
+        }
+    }
+}
+
+/// 在独立线程的临时运行时上执行一次性异步拉取（向导处于同步上下文）。
+fn block_on<F>(fut: F) -> F::Output
+where
+    F: std::future::Future + Send,
+    F::Output: Send,
+{
+    std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("build setup fetch runtime")
+                    .block_on(fut)
+            })
+            .join()
+            .expect("setup fetch thread panicked")
+    })
 }
 
 /// OpenAI Codex 流程：检测本地 `~/.codex` 登录态；已登录则从本地模型列表选择，

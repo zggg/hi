@@ -311,6 +311,13 @@ pub(super) fn format_zh(id: MessageId, args: &[String]) -> String {
         }
         MessageId::SetupModelPrompt => "请选择模型".into(),
         MessageId::SetupModelCustom => "自定义模型名称".into(),
+        MessageId::SetupModelFetching => "正在拉取可用模型…".into(),
+        MessageId::SetupModelFetchDone => format!("已获取 {} 个模型", arg(args, 0)),
+        MessageId::SetupModelFetchFailedTitle => "拉取模型列表失败".into(),
+        MessageId::SetupModelFetchFailedNote => format!(
+            "已回退到内置列表 / 手动输入。\n详情：{}",
+            arg(args, 0)
+        ),
         MessageId::SetupApiKeyPrompt => "API Key".into(),
         MessageId::SetupSaving => "正在保存配置…".into(),
         MessageId::SetupFinishNoGateway => "\

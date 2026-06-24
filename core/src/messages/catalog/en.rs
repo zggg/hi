@@ -326,6 +326,13 @@ pub(super) fn format_en(id: MessageId, args: &[String]) -> String {
         }
         MessageId::SetupModelPrompt => "Choose model".into(),
         MessageId::SetupModelCustom => "Custom model name".into(),
+        MessageId::SetupModelFetching => "Fetching available models…".into(),
+        MessageId::SetupModelFetchDone => format!("Fetched {} models", arg(args, 0)),
+        MessageId::SetupModelFetchFailedTitle => "Failed to fetch model list".into(),
+        MessageId::SetupModelFetchFailedNote => format!(
+            "Falling back to built-in list / manual input.\nDetail: {}",
+            arg(args, 0)
+        ),
         MessageId::SetupApiKeyPrompt => "API Key".into(),
         MessageId::SetupSaving => "Saving configuration…".into(),
         MessageId::SetupFinishNoGateway => "\

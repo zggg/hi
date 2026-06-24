@@ -116,6 +116,59 @@ pub fn models_for(preset_id: &str) -> &'static [ModelOption] {
     }
 }
 
+/// 从动态拉取的模型 id 列表构建选择菜单（末尾追加「自定义输入 / 返回」）。
+///
+/// Author: gz
+pub fn pick_from_ids(
+    session: &super::wizard::Session,
+    ids: &[String],
+    current: &str,
+) -> anyhow::Result<ModelPick> {
+    let locale = session.locale();
+    let default = if ids.iter().any(|m| m == current) {
+        current.to_string()
+    } else {
+        ids.first().cloned().unwrap_or_default()
+    };
+
+    let custom_label = t(locale, MessageId::ModelCustomLabel, &[]);
+    let custom_hint = t(locale, MessageId::ModelCustomHint, &[]);
+    let (back_label, back_hint) = back_option(locale);
+
+    let mut owned: Vec<(String, String, String)> = ids
+        .iter()
+        .map(|m| (m.clone(), m.clone(), String::new()))
+        .collect();
+    owned.push((CUSTOM_MODEL_VALUE.to_string(), custom_label, custom_hint));
+    owned.push((BACK_VALUE.to_string(), back_label, back_hint));
+
+    let options: Vec<SelectOption> = owned
+        .iter()
+        .map(|(value, label, hint)| SelectOption {
+            value: value.as_str(),
+            label: label.as_str(),
+            hint: hint.as_str(),
+        })
+        .collect();
+
+    let picked = session.select_with(
+        &t(locale, MessageId::SetupModelPrompt, &[]),
+        &options,
+        &default,
+        false,
+    )?;
+    if picked == BACK_VALUE {
+        return Ok(ModelPick::Back);
+    }
+    if picked == CUSTOM_MODEL_VALUE {
+        return Ok(ModelPick::Model(session.input(
+            &t(locale, MessageId::SetupModelNamePrompt, &[]),
+            current,
+        )?));
+    }
+    Ok(ModelPick::Model(picked.to_string()))
+}
+
 /// Interactive model pick: menu when curated list exists; custom + back at the end.
 pub fn choose_model(
     session: &super::wizard::Session,

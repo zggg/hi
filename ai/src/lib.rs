@@ -3,6 +3,7 @@
 pub mod codex;
 mod http_client;
 mod llm_log;
+pub mod model_listing;
 pub mod openai_compat;
 mod openai_stream;
 pub mod provider;

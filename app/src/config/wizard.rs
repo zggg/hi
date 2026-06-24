@@ -240,6 +240,23 @@ impl Session {
         Ok(())
     }
 
+    /// 以加载动画包裹一段阻塞工作（如网络拉取模型列表）；
+    /// 闭包返回 `(结果, 结束提示)`，结束提示在动画停止时显示。
+    pub fn spinner<T>(&self, start_label: &str, work: impl FnOnce() -> (T, String)) -> T {
+        if self.interactive {
+            let spin = cliclack::spinner();
+            spin.start(start_label);
+            let (result, done_label) = work();
+            spin.stop(done_label);
+            result
+        } else {
+            println!("{start_label}");
+            let (result, done_label) = work();
+            println!("{done_label}");
+            result
+        }
+    }
+
     pub fn finish(&self, message: &str) -> anyhow::Result<()> {
         if self.interactive {
             cliclack::outro_note(

@@ -153,9 +153,11 @@ hi setup
 | 6a | `Ollama 服务地址（不含 /v1 后缀）` | `ai.base_url` | `http://localhost:11434` | ✓（仅 ollama） |
 | 6b | `API 基础地址 base_url（留空则使用 Provider 默认值）` | `ai.base_url` | 见 Provider 预设 | ✓（openai-compat / anthropic） |
 | 6c | DeepSeek API Key 说明 | — | 引导至 platform.deepseek.com | —（仅 deepseek） |
-| 7 | `选择模型` 或 `模型名称（model）` | `ai.model` | 有预设则菜单选择 +「自定义」；OpenAI 兼容需手输 | ✓ |
-| 8 | `API Key`（密码输入；更新时空回车保留） | `ai.api_key` | — | ✓（Ollama 跳过） |
+| 7 | `API Key`（密码输入；更新时空回车保留） | `ai.api_key` | — | ✓（Ollama 跳过） |
+| 8 | `选择模型` 或 `模型名称（model）` | `ai.model` | 先按 base_url+key 动态拉取，失败回退菜单/手输 | ✓ |
 | 9 | 保存 spinner → **完成** | — | 见下方 FINISH 文案 | — |
+
+> 顺序说明：API Key 提前到选模型之前，因为动态拉取模型列表需要 base_url + key。
 
 **Provider 预设**（`setup.rs` `PRESETS`）：
 
@@ -167,7 +169,9 @@ hi setup
 | Anthropic Claude | `anthropic` | `anthropic` | `claude-sonnet-4-20250514` | （空，走 Anthropic 默认） |
 | Ollama 本地推理 | `ollama` | `ollama` | `llama3.2` | `http://localhost:11434` |
 
-**模型选择**：DeepSeek / Anthropic / Ollama / Codex 提供 curated 列表（菜单 +「自定义模型名…」）；OpenAI 兼容接口仍自由输入。
+**模型选择**（`setup.rs` `choose_model_with_fetch`）：
+- **openai-compat / anthropic / ollama**（含 DeepSeek、自定义厂商）：用已填的 base_url（+ API Key）**动态拉取**真实模型列表（`hi-ai::model_listing`：openai-compat `GET {base}/models`、anthropic `GET {base}/v1/models`、ollama `GET {base}/api/tags`），菜单展示真实 id +「自定义模型名…」+「返回」。拉取失败（网络/鉴权/解析）则给出回退提示，退回内置 curated 列表 / 手动输入。
+- **codex**：读取本地 Codex CLI 的 `~/.codex/config.toml` + `models_cache.json`（Codex CLI 自身刷新写入），叠加内置兜底；ChatGPT 后端无公开列模型端点，故沿用本地缓存这一「准动态」来源。- **ollama**：用 base_url **动态拉取**本地已安装模型（`GET {base}/api/tags`，无需鉴权，字段 `models[].name`）；拉取失败回退内置 curated 列表 / 手动输入。
 
 **向导不配置、但保留默认的段**（重复 `hi setup` 不覆盖用户手改）：
 

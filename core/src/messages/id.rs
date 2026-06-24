@@ -150,6 +150,10 @@ pub enum MessageId {
     SetupDeepseekKeyNote,
     SetupModelPrompt,
     SetupModelCustom,
+    SetupModelFetching,
+    SetupModelFetchDone,       // {0} count
+    SetupModelFetchFailedTitle,
+    SetupModelFetchFailedNote, // {0} reason
     SetupApiKeyPrompt,
     SetupSaving,
     SetupFinishNoGateway,
