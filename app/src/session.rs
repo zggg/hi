@@ -10,7 +10,7 @@ use crate::runtime::load_config;
 pub enum SessionCommands {
     /// List all sessions (message counts and last activity)
     List,
-    /// Show transcript (`--context` for agent-visible rows only)
+    /// Show transcript (`--context` for agent-visible rows only; `-v` for full think/tools)
     Show {
         #[arg(long, default_value = "chat:main")]
         session: String,
@@ -42,14 +42,16 @@ pub enum SessionCommands {
     },
 }
 
-pub fn run(cmd: SessionCommands) -> anyhow::Result<()> {
+pub fn run(cmd: SessionCommands, verbose: bool) -> anyhow::Result<()> {
     let config = load_config().map_err(|e| anyhow::anyhow!(e.to_string()))?;
     let locale = config.resolved_locale();
     let store = SessionStore::open(config.sessions_db_path()).map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
     match cmd {
         SessionCommands::List => cmd_list(&store, locale),
-        SessionCommands::Show { session, context } => cmd_show(&store, &session, context, locale),
+        SessionCommands::Show { session, context } => {
+            cmd_show(&store, &session, context, verbose, locale)
+        }
         SessionCommands::Export { session, output } => {
             cmd_export(&store, &session, output.as_ref(), locale)
         }
@@ -85,6 +87,7 @@ fn cmd_show(
     store: &SessionStore,
     session: &str,
     context_only: bool,
+    verbose: bool,
     locale: hi_core::Locale,
 ) -> anyhow::Result<()> {
     let session_id = SessionId(session.to_string());
@@ -100,8 +103,11 @@ fn cmd_show(
         );
         return Ok(());
     }
-    for row in rows {
-        print_message_line(&row);
+    for (i, row) in rows.iter().enumerate() {
+        print!("{}", format_message_line(row, verbose));
+        if verbose && i + 1 < rows.len() {
+            println!();
+        }
     }
     Ok(())
 }
@@ -199,7 +205,7 @@ fn cmd_purge(
 
 const PREVIEW_MAX_CHARS: usize = 120;
 
-fn truncate_preview(text: &str, max_chars: usize) -> String {
+pub(crate) fn truncate_preview(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         return text.to_string();
     }
@@ -208,17 +214,74 @@ fn truncate_preview(text: &str, max_chars: usize) -> String {
     out
 }
 
-fn print_message_line(row: &StoredMessage) {
-    let role = match row.message.role {
+fn role_label(role: Role) -> &'static str {
+    match role {
         Role::System => "system",
         Role::User => "user",
         Role::Assistant => "assistant",
         Role::Tool => "tool",
-    };
+    }
+}
+
+pub(crate) fn format_message_line(row: &StoredMessage, verbose: bool) -> String {
+    if verbose {
+        format_message_verbose(row)
+    } else {
+        format_message_preview(row)
+    }
+}
+
+fn format_message_preview(row: &StoredMessage) -> String {
+    let role = role_label(row.message.role);
     let ctx = if row.in_context { "" } else { " [archived]" };
-    print!("#{:<5} {role}{ctx}: ", row.id);
     let content = row.message.content.lines().next().unwrap_or("");
-    println!("{}", truncate_preview(content, PREVIEW_MAX_CHARS));
+    format!(
+        "#{:<5} {role}{ctx}: {}\n",
+        row.id,
+        truncate_preview(content, PREVIEW_MAX_CHARS)
+    )
+}
+
+fn format_message_verbose(row: &StoredMessage) -> String {
+    let role = role_label(row.message.role);
+    let ctx = if row.in_context { "" } else { " [archived]" };
+    let mut out = match row.message.role {
+        Role::Tool => {
+            let call_id = row.message.tool_call_id.as_deref().unwrap_or("—");
+            format!("#{:<5} {role}{ctx} (call_id={call_id})\n", row.id)
+        }
+        _ => format!("#{:<5} {role}{ctx}\n", row.id),
+    };
+
+    if let Some(reasoning) = row.message.reasoning_content.as_ref().filter(|s| !s.is_empty()) {
+        push_section(&mut out, "think", reasoning);
+    }
+
+    if let Some(calls) = row.message.tool_calls.as_ref().filter(|c| !c.is_empty()) {
+        out.push_str("--- tool_calls ---\n");
+        for call in calls {
+            out.push_str(&format!("· {} {}\n", call.name, call.arguments));
+        }
+    }
+
+    if !row.message.content.is_empty() {
+        let section = if row.message.role == Role::Tool {
+            "output"
+        } else {
+            "content"
+        };
+        push_section(&mut out, section, &row.message.content);
+    }
+
+    out
+}
+
+fn push_section(out: &mut String, title: &str, body: &str) {
+    out.push_str(&format!("--- {title} ---\n"));
+    out.push_str(body);
+    if !body.ends_with('\n') {
+        out.push('\n');
+    }
 }
 
 #[derive(serde::Serialize)]

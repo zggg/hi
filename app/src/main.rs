@@ -34,7 +34,7 @@ struct Cli {
     /// Session id for transcript/context isolation (default: tui:main)
     #[arg(short = 's', long, value_name = "SESSION_ID")]
     session: Option<String>,
-    /// Start the TUI in verbose mode (stream full think & tool output)
+    /// Verbose output (TUI/chat: stream think & tools; session show: full debug transcript)
     #[arg(short = 'v', long, global = true)]
     verbose: bool,
     #[command(subcommand)]
@@ -338,7 +338,7 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Setup) => config::run_setup()?,
         Some(Commands::Model) => config::run_model()?,
         Some(Commands::Config) => config::show()?,
-        Some(Commands::Session { sub }) => session::run(sub)?,
+        Some(Commands::Session { sub }) => session::run(sub, cli.verbose)?,
         Some(Commands::Memory { sub }) => memory::run(sub).await?,
     }
 
