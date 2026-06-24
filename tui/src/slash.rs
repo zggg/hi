@@ -27,7 +27,16 @@ const COMMANDS: &[SlashCommand] = &[
         name: "/compact",
         description: MessageId::TuiSlashCompactDesc,
     },
+    SlashCommand {
+        name: "/verbose",
+        description: MessageId::TuiSlashVerboseDesc,
+    },
 ];
+
+/// TUI 专属（非会话上下文）命令：输入完整即应隐藏菜单、由 Enter 直接提交。
+fn is_tui_only_command(token: &str) -> bool {
+    token == "/verbose"
+}
 
 /// 首行以 `/` 开头且光标在斜杠 token 内时返回 token 文本（含 `/`）。
 pub fn slash_token(text: &str, cursor: usize) -> Option<&str> {
@@ -84,7 +93,7 @@ pub fn top_level_slash_visible(text: &str, cursor: usize, agent_busy: bool) -> b
     let Some(token) = slash_token(text, cursor) else {
         return false;
     };
-    parse_session_command(token).is_none()
+    parse_session_command(token).is_none() && !is_tui_only_command(token)
 }
 
 /// 按前缀过滤（忽略大小写）；`query` 为 `/` 后的部分，空则返回全部。

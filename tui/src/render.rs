@@ -12,6 +12,8 @@ const DIFF_MAX: usize = 24;
 const USER_MARK: &str = "> ";
 const CONT_MARK: &str = "  ";
 const BULLET: &str = "● ";
+/// verbose 展开时 think / 工具正文的缩进（对齐到引导符之后）。
+const VERBOSE_INDENT: &str = "    ";
 
 /// 底部忙碌指示（旋转动画 + 提示 + 已耗时）。
 ///
@@ -57,6 +59,27 @@ pub fn thinking_preview(text: &str, width: u16) -> Line<'static> {
     ])
 }
 
+/// verbose：think 全文起始头行 `▸ think`（写入 scrollback，正文逐行跟随其后）。
+///
+/// Author: gz
+pub fn thinking_header() -> Line<'static> {
+    cont_line(Line::from(Span::styled("▸ think", UiTheme::thinking())))
+}
+
+/// verbose：think 正文逻辑行（暗色斜体，按宽度换行；全文不截断）。
+///
+/// Author: gz
+pub fn thinking_body_lines(text: &str, width: u16) -> Vec<Line<'static>> {
+    let body = (width.max(1) as usize)
+        .saturating_sub(VERBOSE_INDENT.len())
+        .max(1);
+    let style = UiTheme::thinking().add_modifier(Modifier::ITALIC);
+    wrap_text(text, body)
+        .into_iter()
+        .map(|l| Line::from(vec![Span::raw(VERBOSE_INDENT), Span::styled(l, style)]))
+        .collect()
+}
+
 /// 单个工具调用行（完成时实时写入历史）：`✓ bash · ls ~`，
 /// 后半段展示「执行了什么」（命令 / 路径 / 模式等关键参数）。
 ///
@@ -67,6 +90,51 @@ pub fn tool_line(tool: &ToolBlock, width: u16) -> Line<'static> {
         ToolPhase::Done(true) => ("✓", Style::default().fg(Color::Green)),
         ToolPhase::Done(false) => ("✗", Style::default().fg(Color::Red)),
     };
+    tool_line_with_mark(mark, color, tool, width)
+}
+
+/// verbose：工具调用头行（始终用中性 `·` 标记，最终成败由后续状态行给出），
+/// 这样流式 output 可以先于「完成态」写入 scrollback 而不丢失结果标记。
+///
+/// Author: gz
+pub fn tool_header_line(tool: &ToolBlock, width: u16) -> Line<'static> {
+    tool_line_with_mark("·", UiTheme::MUTED, tool, width)
+}
+
+/// verbose：工具完成状态行（`✓` / `✗`，紧随 output 之后写入 scrollback）。
+///
+/// Author: gz
+pub fn tool_status_line(success: bool) -> Line<'static> {
+    let (mark, color) = if success {
+        ("✓", Style::default().fg(Color::Green))
+    } else {
+        ("✗", Style::default().fg(Color::Red))
+    };
+    Line::from(vec![
+        Span::raw(VERBOSE_INDENT),
+        Span::styled(mark.to_string(), color),
+    ])
+}
+
+/// verbose：工具 output 正文逻辑行（暗色，按宽度换行；全文不截断）。
+///
+/// Author: gz
+pub fn tool_body_lines(text: &str, width: u16) -> Vec<Line<'static>> {
+    let body = (width.max(1) as usize)
+        .saturating_sub(VERBOSE_INDENT.len())
+        .max(1);
+    wrap_text(text, body)
+        .into_iter()
+        .map(|l| Line::from(vec![Span::raw(VERBOSE_INDENT), Span::styled(l, UiTheme::MUTED)]))
+        .collect()
+}
+
+fn tool_line_with_mark(
+    mark: &str,
+    color: Style,
+    tool: &ToolBlock,
+    width: u16,
+) -> Line<'static> {
     let mut spans = vec![
         Span::styled(format!("{mark} "), color),
         Span::styled(tool.name.clone(), UiTheme::TOOL),

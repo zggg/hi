@@ -43,6 +43,10 @@ pub struct ToolBlock {
     pub phase: ToolPhase,
     /// 运行中 stdout/stderr 流式片段（bash 等）。
     pub output: String,
+    /// verbose：调用头行 `· name · args` 是否已写入 scrollback（每 block 一次）。
+    pub header_committed: bool,
+    /// verbose：已写入 scrollback 的 output 逻辑行数（流式追踪，避免重复 commit）。
+    pub lines_committed: usize,
 }
 
 impl Default for ToolBlock {
@@ -52,6 +56,8 @@ impl Default for ToolBlock {
             arguments: String::new(),
             phase: ToolPhase::Running,
             output: String::new(),
+            header_committed: false,
+            lines_committed: 0,
         }
     }
 }
@@ -75,8 +81,11 @@ pub enum ThinkingPhase {
 pub struct ThinkingBlock {
     pub content: String,
     pub phase: ThinkingPhase,
-    /// 摘要行 `▸ think · N 字` 是否已写入 scrollback（每 block 只 commit 一次）。
+    /// 非 verbose：摘要行 `▸ think · N 字`；verbose：起始头行 `▸ think`。
+    /// 两种模式下都表示「该 block 的引导行已写入 scrollback」，每 block 只 commit 一次。
     pub summary_committed: bool,
+    /// verbose：已写入 scrollback 的 think 正文逻辑行数（流式追踪）。
+    pub lines_committed: usize,
 }
 
 /// Author: gz
@@ -150,6 +159,7 @@ impl Turn {
                         content: text,
                         phase: ThinkingPhase::Streaming,
                         summary_committed: false,
+                        lines_committed: 0,
                     })),
                 }
             }

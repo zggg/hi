@@ -34,6 +34,9 @@ struct Cli {
     /// Session id for transcript/context isolation (default: tui:main)
     #[arg(long, value_name = "SESSION_ID")]
     session: Option<String>,
+    /// Start the TUI in verbose mode (stream full think & tool output)
+    #[arg(short = 'v', long, global = true)]
+    verbose: bool,
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -236,7 +239,11 @@ async fn run_chat(
     Ok(())
 }
 
-async fn run_tui(services: Arc<HiServices>, session: Option<String>) -> anyhow::Result<()> {
+async fn run_tui(
+    services: Arc<HiServices>,
+    session: Option<String>,
+    verbose: bool,
+) -> anyhow::Result<()> {
     let locale = services.locale();
     let session_id = session
         .map(SessionId)
@@ -258,6 +265,7 @@ async fn run_tui(services: Arc<HiServices>, session: Option<String>) -> anyhow::
         session_id.0,
         model_control,
         locale,
+        verbose,
     )
     .await
     .map_err(|e| map_core_err(e, locale))
@@ -273,13 +281,13 @@ async fn main() -> anyhow::Result<()> {
             let config = load_config().map_err(|e| map_core_err(e, hi_core::resolve_locale(None)))?;
             let locale = config.resolved_locale();
             let services = HiServices::open(config).map_err(|e| map_core_err(e, locale))?;
-            run_tui(services, cli.session).await?;
+            run_tui(services, cli.session, cli.verbose).await?;
         }
         Some(Commands::Tui { session }) => {
             let config = load_config().map_err(|e| map_core_err(e, hi_core::resolve_locale(None)))?;
             let locale = config.resolved_locale();
             let services = HiServices::open(config).map_err(|e| map_core_err(e, locale))?;
-            run_tui(services, session.or(cli.session)).await?;
+            run_tui(services, session.or(cli.session), cli.verbose).await?;
         }
         Some(Commands::Gateway { action, check }) => {
             if check {

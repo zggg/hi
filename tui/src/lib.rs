@@ -17,6 +17,7 @@ use hi_core::{AgentSession, Locale, ModelControl};
 
 pub use approval::SharedApproval;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     session: Box<dyn AgentSession>,
     model: String,
@@ -24,8 +25,9 @@ pub async fn run(
     session_id: String,
     model_control: Arc<dyn ModelControl>,
     locale: Locale,
+    verbose: bool,
 ) -> hi_core::Result<()> {
-    app::TuiApp::new(session, model, workdir, session_id, model_control, locale)
+    app::TuiApp::new(session, model, workdir, session_id, model_control, locale, verbose)
         .run()
         .await
 }

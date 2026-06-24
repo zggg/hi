@@ -19,6 +19,9 @@
         assert!(menu_visible("/", 1, false));
         assert!(!menu_visible("/reset", 6, false));
         assert!(!menu_visible("/compact", 8, false));
+        // /verbose 是 TUI 专属命令，输完整后也应隐藏菜单以便 Enter 直接提交。
+        assert!(!menu_visible("/verbose", 8, false));
+        assert!(menu_visible("/verb", 5, false));
     }
 
     #[test]
@@ -35,9 +38,10 @@
 
     #[test]
     fn filter_includes_model() {
-        assert_eq!(filter_commands("").len(), 3);
+        assert_eq!(filter_commands("").len(), 4);
         assert_eq!(filter_commands("")[0].name, "/model");
         assert!(filter_commands("mod").iter().any(|c| c.name == "/model"));
+        assert!(filter_commands("verb").iter().any(|c| c.name == "/verbose"));
     }
 
     #[test]

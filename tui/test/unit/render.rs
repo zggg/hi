@@ -23,6 +23,7 @@
             arguments: r#"{"command":"ls ~"}"#.into(),
             phase: ToolPhase::Done(true),
             output: String::new(),
+            ..ToolBlock::default()
         };
         let tool = text_of(&[tool_line(&tool, 80)]);
         assert!(tool.contains('✓'));
@@ -63,6 +64,7 @@
             arguments: r#"{"command":"cargo test"}"#.into(),
             phase: ToolPhase::Running,
             output: String::new(),
+            ..ToolBlock::default()
         };
         let waiting = tool_preview_lines(&running, 80, 2);
         assert_eq!(waiting.len(), 2);
@@ -95,12 +97,48 @@
     }
 
     #[test]
+    fn verbose_thinking_body_keeps_full_text() {
+        let lines = thinking_body_lines("第一行思考内容\n继续推理细节", 80);
+        let text = text_of(&lines);
+        assert!(text.contains("第一行思考内容"));
+        assert!(text.contains("继续推理细节"));
+    }
+
+    #[test]
+    fn verbose_tool_header_and_status() {
+        let tool = ToolBlock {
+            name: "bash".into(),
+            arguments: r#"{"command":"cargo test"}"#.into(),
+            phase: ToolPhase::Done(true),
+            output: String::new(),
+            ..ToolBlock::default()
+        };
+        let header = text_of(&[tool_header_line(&tool, 80)]);
+        assert!(header.contains("bash"));
+        assert!(header.contains("cargo test"));
+        assert!(header.contains('·'));
+        let ok = text_of(&[tool_status_line(true)]);
+        assert!(ok.contains('✓'));
+        let fail = text_of(&[tool_status_line(false)]);
+        assert!(fail.contains('✗'));
+    }
+
+    #[test]
+    fn verbose_tool_body_not_truncated() {
+        let long = "x".repeat(500);
+        let lines = tool_body_lines(&long, 40);
+        let text: String = text_of(&lines).chars().filter(|c| *c == 'x').collect();
+        assert_eq!(text.chars().count(), 500, "verbose 展开应保留全文，不截断");
+    }
+
+    #[test]
     fn tool_line_shows_name_and_command() {
         let running = ToolBlock {
             name: "bash".into(),
             arguments: r#"{"command":"cargo test"}"#.into(),
             phase: ToolPhase::Running,
             output: String::new(),
+            ..ToolBlock::default()
         };
         let line = tool_line(&running, 80);
         let text: String = line

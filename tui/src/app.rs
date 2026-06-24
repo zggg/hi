@@ -27,7 +27,8 @@ use crate::input::{InputAction, InputArea};
 use crate::model_picker::model_picker_lines;
 use crate::render::{
     busy_line, queued_for_next_turn_line, render_diff, render_notice, render_user,
-    reply_logical_line, thinking_preview, thinking_summary, tool_line, tool_preview_lines,
+    reply_logical_line, thinking_body_lines, thinking_header, thinking_preview, thinking_summary,
+    tool_body_lines, tool_header_line, tool_line, tool_preview_lines, tool_status_line,
 };
 use crate::slash::{self, SlashCommand};
 use crate::turn::{Block, Notice, ThinkingPhase, ToolPhase, Turn};
@@ -82,6 +83,8 @@ pub struct TuiApp {
     model_submenu_sel: usize,
     model_control: Arc<dyn ModelControl>,
     locale: Locale,
+    /// 详细模式：开启后 think 与工具 output 全文流式写入 scrollback（`/verbose` 或 `-v`）。
+    verbose: bool,
 }
 
 impl TuiApp {
@@ -92,6 +95,7 @@ impl TuiApp {
         session_id: String,
         model_control: Arc<dyn ModelControl>,
         locale: Locale,
+        verbose: bool,
     ) -> Self {
         Self {
             session: Arc::new(Mutex::new(session)),
@@ -120,6 +124,7 @@ impl TuiApp {
             slash_sel: 0,
             model_submenu_sel: 0,
             locale,
+            verbose,
         }
     }
 
@@ -227,6 +232,7 @@ impl TuiApp {
 
         // 每帧批量写入 scrollback，避免逐行 insert_before 拖慢流式输出。
         let mut batch: Vec<Line<'static>> = Vec::new();
+        let verbose = self.verbose;
 
         for text in self.pending_queue_notices.drain(..).collect::<Vec<_>>() {
             batch.push(queued_for_next_turn_line(&text));
@@ -258,25 +264,85 @@ impl TuiApp {
                     Block::Thinking(t) => {
                         let thinking_streaming =
                             streaming && t.phase == ThinkingPhase::Streaming;
-                        if thinking_streaming {
-                            streaming_hold = true;
-                            break 'blocks;
+                        if verbose {
+                            if !t.content.is_empty() && !t.summary_committed {
+                                batch.push(thinking_header());
+                                t.summary_committed = true;
+                            }
+                            let content = t.content.clone();
+                            let logical: Vec<&str> = content.split('\n').collect();
+                            let mut committable = logical.len();
+                            if thinking_streaming {
+                                committable = committable.saturating_sub(1);
+                            } else if content.ends_with('\n') && committable > 0 {
+                                committable -= 1;
+                            }
+                            while t.lines_committed < committable {
+                                let idx = t.lines_committed;
+                                batch.extend(thinking_body_lines(logical[idx], width));
+                                t.lines_committed += 1;
+                            }
+                            if thinking_streaming && t.lines_committed < logical.len() {
+                                streaming_hold = true;
+                                break 'blocks;
+                            }
+                            self.cur_block += 1;
+                        } else {
+                            if thinking_streaming {
+                                streaming_hold = true;
+                                break 'blocks;
+                            }
+                            if !t.content.is_empty() && !t.summary_committed {
+                                let summary = thinking_summary(&t.content);
+                                t.summary_committed = true;
+                                batch.push(summary);
+                            }
+                            self.cur_block += 1;
                         }
-                        if !t.content.is_empty() && !t.summary_committed {
-                            let summary = thinking_summary(&t.content);
-                            t.summary_committed = true;
-                            batch.push(summary);
-                        }
-                        self.cur_block += 1;
                     }
                     Block::Tool(tool) => {
-                        if tool.phase == ToolPhase::Running && streaming {
-                            streaming_hold = true;
-                            break 'blocks;
+                        if verbose {
+                            let running = tool.phase == ToolPhase::Running;
+                            let tool_streaming = running && streaming;
+                            if !tool.header_committed {
+                                batch.push(tool_header_line(tool, width));
+                                tool.header_committed = true;
+                            }
+                            let output = tool.output.clone();
+                            if !output.is_empty() {
+                                let logical: Vec<&str> = output.split('\n').collect();
+                                let mut committable = logical.len();
+                                if tool_streaming {
+                                    committable = committable.saturating_sub(1);
+                                } else if output.ends_with('\n') && committable > 0 {
+                                    committable -= 1;
+                                }
+                                while tool.lines_committed < committable {
+                                    let idx = tool.lines_committed;
+                                    batch.extend(tool_body_lines(logical[idx], width));
+                                    tool.lines_committed += 1;
+                                }
+                                if tool_streaming && tool.lines_committed < logical.len() {
+                                    streaming_hold = true;
+                                    break 'blocks;
+                                }
+                            } else if tool_streaming {
+                                streaming_hold = true;
+                                break 'blocks;
+                            }
+                            if let ToolPhase::Done(success) = tool.phase {
+                                batch.push(tool_status_line(success));
+                            }
+                            self.cur_block += 1;
+                        } else {
+                            if tool.phase == ToolPhase::Running && streaming {
+                                streaming_hold = true;
+                                break 'blocks;
+                            }
+                            let line = tool_line(tool, width);
+                            batch.push(line);
+                            self.cur_block += 1;
                         }
-                        let line = tool_line(tool, width);
-                        batch.push(line);
-                        self.cur_block += 1;
                     }
                     Block::Diff(diff) => {
                         let lines = render_diff(&diff.path, &diff.lines, width);
@@ -619,6 +685,21 @@ impl TuiApp {
         });
         self.mark_dirty();
 
+        if text == "/verbose" {
+            self.verbose = !self.verbose;
+            if let Some(turn) = self.turns.last_mut() {
+                let msg = if self.verbose {
+                    MessageId::TuiVerboseOn
+                } else {
+                    MessageId::TuiVerboseOff
+                };
+                turn.push_notice(Notice::System(t(self.locale, msg, &[])));
+                turn.finalize();
+            }
+            self.mark_dirty();
+            return Ok(());
+        }
+
         if let Some(cmd) = parse_session_command(&text) {
             match cmd {
                 SessionCommand::Reset => {
@@ -852,12 +933,30 @@ impl TuiApp {
                     .collect()
             }
             Block::Tool(tool) if tool.phase == ToolPhase::Running => {
-                tool_preview_lines(tool, width, ACTIVITY_ROWS)
+                if self.verbose {
+                    let logical: Vec<&str> = tool.output.split('\n').collect();
+                    logical
+                        .iter()
+                        .skip(tool.lines_committed)
+                        .flat_map(|seg| tool_body_lines(seg, width))
+                        .collect()
+                } else {
+                    tool_preview_lines(tool, width, ACTIVITY_ROWS)
+                }
             }
             Block::Thinking(t)
                 if t.phase == ThinkingPhase::Streaming && !t.content.is_empty() =>
             {
-                vec![thinking_preview(&t.content, width)]
+                if self.verbose {
+                    let logical: Vec<&str> = t.content.split('\n').collect();
+                    logical
+                        .iter()
+                        .skip(t.lines_committed)
+                        .flat_map(|seg| thinking_body_lines(seg, width))
+                        .collect()
+                } else {
+                    vec![thinking_preview(&t.content, width)]
+                }
             }
             _ => return None,
         };
