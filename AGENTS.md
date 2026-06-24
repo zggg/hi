@@ -48,6 +48,7 @@ cargo run -p hi -- gateway               # 消息渠道网关
 cargo run -p hi -- gateway --check       # 渠道连接预检
 cargo run -p hi -- config            # 查看配置（密钥脱敏）
 cargo run -p hi -- setup                 # 基础配置：LLM + 工作目录（已存在则回车保留当前值）
+cargo run -p hi -- model                 # 仅配置模型：新增/切换 model，保留工作目录与渠道
 cargo run -p hi -- gateway setup         # 消息渠道配置
 cargo run -p hi -- session list           # 会话列表（全文永久保留）
 cargo run -p hi -- session show --session chat:main

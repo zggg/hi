@@ -12,6 +12,11 @@ pub fn run_setup() -> anyhow::Result<()> {
     setup::run()
 }
 
+/// LLM-only wizard (`hi model`): add/switch model, keep other settings.
+pub fn run_model() -> anyhow::Result<()> {
+    setup::run_model()
+}
+
 /// Message-channel wizard (`hi gateway setup`).
 pub fn run_gateway_setup() -> anyhow::Result<()> {
     gateway::run()

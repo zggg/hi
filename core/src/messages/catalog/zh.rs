@@ -383,6 +383,15 @@ Gateway 工具在 workspace 目录执行；本地 chat/tui 在当前目录。
         MessageId::ModelCustomLabel => "自定义模型名…".into(),
         MessageId::ModelCustomHint => "手动输入 model 名称".into(),
         MessageId::SetupModelNamePrompt => "模型名称（model）".into(),
+        MessageId::ModelSetupTitle => "hi · 配置模型".into(),
+        MessageId::ModelSetupFinish => "\
+模型配置已保存。
+
+  hi config              查看配置（密钥脱敏）
+  hi                     终端 UI（/model 可临时切换）
+
+工作目录与消息渠道配置保持不变。"
+            .into(),
 
         // --- wizard: gateway ---
         MessageId::GatewaySetupTitle => "hi · 消息渠道配置".into(),

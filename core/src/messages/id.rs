@@ -185,6 +185,8 @@ pub enum MessageId {
     ModelCustomLabel,
     ModelCustomHint,
     SetupModelNamePrompt,
+    ModelSetupTitle,
+    ModelSetupFinish,
 
     // --- wizard: gateway ---
     GatewaySetupTitle,

@@ -400,6 +400,15 @@ Tool approval rules were written to hi.toml; runtime grants append automatically
         MessageId::ModelCustomLabel => "Custom model name…".into(),
         MessageId::ModelCustomHint => "Type model name manually".into(),
         MessageId::SetupModelNamePrompt => "Model name (model)".into(),
+        MessageId::ModelSetupTitle => "hi · Configure model".into(),
+        MessageId::ModelSetupFinish => "\
+Model configuration saved.
+
+  hi config              Show config (secrets redacted)
+  hi                     Terminal UI (use /model to switch on the fly)
+
+Workspace and channel settings are left unchanged."
+            .into(),
 
         // --- wizard: gateway ---
         MessageId::GatewaySetupTitle => "hi · message channel setup".into(),

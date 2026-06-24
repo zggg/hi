@@ -46,6 +46,8 @@ struct Cli {
 enum Commands {
     /// Interactive LLM + workspace setup (re-run uses current values as defaults)
     Setup,
+    /// Configure the LLM model only (add/switch model, keep workspace & channels)
+    Model,
     /// Start interactive terminal UI
     Tui {
         /// Session id for transcript/context isolation (default: tui:main)
@@ -334,6 +336,7 @@ async fn main() -> anyhow::Result<()> {
             run_chat(services, session, single).await?;
         }
         Some(Commands::Setup) => config::run_setup()?,
+        Some(Commands::Model) => config::run_model()?,
         Some(Commands::Config) => config::show()?,
         Some(Commands::Session { sub }) => session::run(sub)?,
         Some(Commands::Memory { sub }) => memory::run(sub).await?,

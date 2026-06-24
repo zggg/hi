@@ -595,6 +595,44 @@ pub fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// LLM-only wizard (`hi model`): add/switch the active model without touching
+/// workspace or message-channel settings. Requires an existing `hi.toml`.
+///
+/// Author: gz
+pub fn run_model() -> anyhow::Result<()> {
+    let path = Config::config_path();
+    let locale = hi_core::resolve_locale(None);
+
+    if !path.exists() {
+        println!("{}", t(locale, MessageId::ConfigNotSetup, &[]));
+        println!();
+        println!("hi setup");
+        return Ok(());
+    }
+
+    let baseline = Config::load().unwrap_or_default();
+    let locale = baseline.resolved_locale();
+    let session = Session::new(path.clone(), locale);
+
+    session.start(&t(locale, MessageId::ModelSetupTitle, &[]))?;
+    session.note(
+        &t(locale, MessageId::NoteTitleSetup, &[]),
+        &t(locale, MessageId::SetupNotePath, &[path.display().to_string()]),
+    )?;
+
+    let ai = prompt_llm(&session, &baseline.ai, true)?;
+
+    let mut config = baseline.clone();
+    config.ai = ai;
+    session.save(&t(locale, MessageId::SetupSaving, &[]), || {
+        config.save()?;
+        Ok(())
+    })?;
+
+    session.finish(&t(locale, MessageId::ModelSetupFinish, &[]))?;
+    Ok(())
+}
+
 #[cfg(test)]
 #[path = "../../test/unit/config/setup.rs"]
 mod tests;
