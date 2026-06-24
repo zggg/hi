@@ -44,6 +44,18 @@
     }
 
     #[test]
+    fn ctrl_j_inserts_newline_at_cursor() {
+        let mut input = InputArea::default();
+        input.handle(KeyCode::Char('a'), KeyModifiers::empty());
+        assert_eq!(
+            input.handle(KeyCode::Char('j'), KeyModifiers::CONTROL),
+            InputAction::None
+        );
+        input.handle(KeyCode::Char('b'), KeyModifiers::empty());
+        assert_eq!(input.as_str(), "a\nb");
+    }
+
+    #[test]
     fn shift_held_enter_inserts_newline() {
         let mut input = InputArea::default();
         input.set_shift_held(true);

@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 /// 粘贴结束后短暂忽略 Enter，避免终端在 Bracketed Paste 后额外投递的回车误触发发送。
 const PASTE_SUBMIT_GUARD: Duration = Duration::from_millis(200);
 
-/// Multi-line input：Enter 发送，Shift+Enter 换行。
+/// Multi-line input：Enter 发送；Ctrl+J 换行（全终端可靠），Shift+Enter 换行（需 CSI-u）。
 ///
 /// Author: gz
 #[derive(Default)]
@@ -66,7 +66,9 @@ impl InputArea {
 
     pub fn handle(&mut self, code: KeyCode, modifiers: KeyModifiers) -> InputAction {
         match code {
-            KeyCode::Char('\n') => {
+            // Ctrl+J 在裸模式下被 crossterm 解为 Char('j')+CONTROL（字节 0x0A），
+            // 不依赖 CSI-u、不与中文 IME 冲突，是全终端可靠的换行键。
+            KeyCode::Char('j') if modifiers.contains(KeyModifiers::CONTROL) => {
                 self.insert_char('\n');
                 InputAction::None
             }

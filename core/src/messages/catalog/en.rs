@@ -548,7 +548,10 @@ Next steps:
             "No matching provider instance — check hi.toml [ai.providers] ({})",
             arg(args, 0)
         ),
-        MessageId::TuiStatusDefault => format!("model {}", arg(args, 0)),
+        MessageId::TuiStatusDefault => format!(
+            "←→ move cursor · Enter send · Ctrl+J newline · Ctrl+C exit · model {}",
+            arg(args, 0)
+        ),
         MessageId::TuiStatusSlashMenu => "↑↓ select · Tab/Enter fill input".into(),
         MessageId::TuiStatusModelMenu => "↑↓ select model · Enter activate · Esc cancel".into(),
         MessageId::TuiSlashModel => "/model".into(),

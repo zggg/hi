@@ -521,7 +521,7 @@ Gateway 工具在 workspace 目录执行；本地 chat/tui 在当前目录。
             arg(args, 0)
         ),
         MessageId::TuiStatusDefault => format!(
-            "←→ 移动光标 · Enter 发送 · Shift+Enter 换行 · Ctrl+C 退出 · model {}",
+            "←→ 移动光标 · Enter 发送 · Ctrl+J 换行 · Ctrl+C 退出 · model {}",
             arg(args, 0)
         ),
         MessageId::TuiStatusSlashMenu => "↑↓ 选择 · Tab/Enter 填入输入框".into(),

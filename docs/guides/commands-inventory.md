@@ -43,7 +43,7 @@ TUI 采用**内联视口 + 终端原生 scrollback**（完成的对话写入 scr
 **空闲时（默认）：**
 
 ```text
-←→ 移动光标 · Enter 发送 · Shift+Enter 换行 · Ctrl+C 退出 · {model}
+←→ 移动光标 · Enter 发送 · Ctrl+J 换行 · Ctrl+C 退出 · {model}
 ```
 
 **斜杠菜单 / 模型子菜单打开时：**
@@ -56,7 +56,8 @@ TUI 采用**内联视口 + 终端原生 scrollback**（完成的对话写入 scr
 | 按键 | 作用 |
 |------|------|
 | `Enter` | 发送输入（含斜杠命令） |
-| `Shift+Enter` | 换行（多行输入） |
+| `Ctrl+J` | 换行（多行输入，全终端可靠） |
+| `Shift+Enter` | 换行（仅在启用 CSI-u 键盘增强协议时生效，如 Linux 或设置 `HI_TUI_KEYBOARD_ENHANCE=1`） |
 | `←` / `→` | 移动输入框光标 |
 | `↑` / `↓` | 斜杠/模型菜单中选择；输入框多行时上下移动 |
 | `Home` / `End` | 光标到行首/行尾 |
