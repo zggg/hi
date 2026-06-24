@@ -32,7 +32,7 @@ use runtime::{load_channels, load_config, resolve_config_workspace, AgentRuntime
 /// Author: gz
 struct Cli {
     /// Session id for transcript/context isolation (default: tui:main)
-    #[arg(long, value_name = "SESSION_ID")]
+    #[arg(short = 's', long, value_name = "SESSION_ID")]
     session: Option<String>,
     /// Start the TUI in verbose mode (stream full think & tool output)
     #[arg(short = 'v', long, global = true)]

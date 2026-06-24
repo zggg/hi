@@ -277,6 +277,7 @@ pub enum MessageId {
     TuiSlashVerboseDesc,
     TuiVerboseOn,
     TuiVerboseOff,
+    TuiExitResumeHint,         // {0} session id
     TuiModelCurrentSuffix,
     TuiApprovalTitle,
     TuiApprovalApprove,

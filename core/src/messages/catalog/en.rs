@@ -564,6 +564,10 @@ Next steps:
         MessageId::TuiSlashVerboseDesc => "Toggle verbose: stream full think & tool output".into(),
         MessageId::TuiVerboseOn => "Verbose: on · think & tool output stream in full".into(),
         MessageId::TuiVerboseOff => "Verbose: off · summary lines only".into(),
+        MessageId::TuiExitResumeHint => format!(
+            "Session saved · session={s} · resume: hi -s {s}",
+            s = arg(args, 0)
+        ),
         MessageId::TuiModelCurrentSuffix => " (current)".into(),
         MessageId::TuiApprovalTitle => "Approval".into(),
         MessageId::TuiApprovalApprove => "y approve".into(),

@@ -159,6 +159,14 @@ impl TuiApp {
         }
         let _ = io::stdout().execute(DisableBracketedPaste);
         let _ = io::stdout().execute(crossterm::cursor::MoveToNextLine(1));
+        println!(
+            "{}",
+            t(
+                self.locale,
+                MessageId::TuiExitResumeHint,
+                std::slice::from_ref(&self.session_id),
+            )
+        );
         result
     }
 

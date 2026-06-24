@@ -536,6 +536,10 @@ Gateway 工具在 workspace 目录执行；本地 chat/tui 在当前目录。
         MessageId::TuiSlashVerboseDesc => "切换详细模式：think 与工具全文流式展开".into(),
         MessageId::TuiVerboseOn => "详细模式：开 · think 与工具输出将全文流式展开".into(),
         MessageId::TuiVerboseOff => "详细模式：关 · 仅显示摘要行".into(),
+        MessageId::TuiExitResumeHint => format!(
+            "会话已保存 · session={s} · 续聊：hi -s {s}",
+            s = arg(args, 0)
+        ),
         MessageId::TuiModelCurrentSuffix => " (当前)".into(),
         MessageId::TuiApprovalTitle => "审批".into(),
         MessageId::TuiApprovalApprove => "y 批准".into(),
