@@ -30,6 +30,22 @@ hi setup
 
 Docs: [Install](docs/guides/install.md) · [Architecture](ARCHITECTURE.md) · [Security](docs/SECURITY.md)
 
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `hi` / `hi tui` | Start the local TUI (`-s <session>` to pick a session, `-v` for verbose) |
+| `hi chat [message]` | Terminal chat: with args = single turn, without = stdin REPL |
+| `hi setup` | Setup wizard: LLM + workspace (re-run keeps current values on Enter) |
+| `hi model` | Configure the model only: add / switch model, keep workspace & channels |
+| `hi config` | Print effective configuration (secrets redacted) |
+| `hi gateway` | Message-channel gateway; `--check` for a connection preflight |
+| `hi gateway <action>` | `setup` / `start` / `stop` / `restart` / `status` / `reload` / `run` |
+| `hi session <sub>` | Sessions: `list` / `show` / `export` / `compressions` / `compression-show` / `purge` |
+| `hi memory <sub>` | Knot memory: `list` / `show` / `add` / `forget` / `reinforce` / `extract` |
+
+> Append `--help` to any command for full flags, e.g. `hi gateway --help`, `hi session show --help`.
+
 ## Memory (Knot system)
 
 Session transcripts and long-term memory are **layered**:

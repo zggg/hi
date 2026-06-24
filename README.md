@@ -34,6 +34,22 @@ hi setup
 
 文档：[安装指南](docs/guides/install.md) · [架构](ARCHITECTURE.md) · [安全](docs/SECURITY.md)
 
+## 命令一览
+
+| 命令 | 说明 |
+|------|------|
+| `hi` / `hi tui` | 启动本地 TUI（`-s <会话>` 指定会话，`-v` 详细模式） |
+| `hi chat [消息]` | 终端对话：带参数=单轮，无参=stdin REPL |
+| `hi setup` | 配置向导：LLM + 工作目录（已配置则回车保留当前值） |
+| `hi model` | 仅配置模型：新增 / 切换 model，保留工作目录与渠道 |
+| `hi config` | 查看当前配置（密钥脱敏） |
+| `hi gateway` | 消息渠道网关；`--check` 连接预检 |
+| `hi gateway <动作>` | `setup` / `start` / `stop` / `restart` / `status` / `reload` / `run` |
+| `hi session <子命令>` | 会话：`list` / `show` / `export` / `compressions` / `compression-show` / `purge` |
+| `hi memory <子命令>` | 结绳记忆：`list` / `show` / `add` / `forget` / `reinforce` / `extract` |
+
+> 任意命令加 `--help` 查看完整参数，例如 `hi gateway --help`、`hi session show --help`。
+
 ## 记忆系统（结绳记事）
 
 会话 transcript 与长期记忆**分层存储**：
