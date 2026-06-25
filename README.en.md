@@ -46,6 +46,21 @@ Docs: [Install](docs/guides/install.md) · [Architecture](ARCHITECTURE.md) · [S
 
 > Append `--help` to any command for full flags, e.g. `hi gateway --help`, `hi session show --help`.
 
+## Tools
+
+The agent ships 4 core tools, plus 2 more when memory is enabled (gated by `[memory]` config):
+
+| Tool | Purpose | Approval |
+|------|---------|----------|
+| `read` | Read a file; relative paths resolve from the working directory | Out-of-workspace paths need one-time approval (per directory tree) |
+| `write` | Write a file (full overwrite) | Out-of-workspace paths need one-time approval |
+| `edit` | Replace the first occurrence of `old_string` in a file | Out-of-workspace paths need one-time approval |
+| `bash` | Run a shell command in the working directory | Dangerous commands and out-of-workspace writes need one-time approval; hardline commands cannot be granted |
+| `memory_search` *(optional)* | Search long-term knot memory by keyword (tasks / decisions / procedures / facts) | — |
+| `memory_write` *(optional)* | Save durable memory worth keeping across sessions; de-duplicated automatically | — |
+
+> Approvals are stored in `tools.approvals`; set `mode = "off"` to disable them. `memory_search` / `memory_write` are gated by `memory_search_enabled` / `memory_write_tool` respectively.
+
 ## Memory (Knot system)
 
 Session transcripts and long-term memory are **layered**:

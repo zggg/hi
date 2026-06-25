@@ -50,6 +50,21 @@ hi setup
 
 > 任意命令加 `--help` 查看完整参数，例如 `hi gateway --help`、`hi session show --help`。
 
+## 可用工具
+
+Agent 内置 4 个核心工具，记忆开启后再追加 2 个（受 `[memory]` 配置控制）：
+
+| 工具 | 作用 | 审批 |
+|------|------|------|
+| `read` | 读取文件，相对路径基于工作目录 | 工作区外路径首次需审批（按目录树记忆） |
+| `write` | 写入文件（整体覆盖） | 工作区外路径首次需审批 |
+| `edit` | 替换文件中首个匹配的 `old_string` | 工作区外路径首次需审批 |
+| `bash` | 在工作目录执行 shell 命令 | 危险命令与工作区外写入需一次性审批；hardline 命令不可放行 |
+| `memory_search` *(可选)* | 按关键词检索结绳长期记忆（待办 / 决定 / 流程 / 事实） | — |
+| `memory_write` *(可选)* | 主动保存值得跨会话记住的持久记忆，自动去重 | — |
+
+> 审批结果写入 `tools.approvals`；`mode = "off"` 可关闭审批。`memory_search` / `memory_write` 分别由 `memory_search_enabled` / `memory_write_tool` 控制。
+
 ## 记忆系统（结绳记事）
 
 会话 transcript 与长期记忆**分层存储**：
