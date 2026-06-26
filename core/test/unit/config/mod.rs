@@ -136,3 +136,21 @@ api_key = "sk-test"
             assert!(text.contains("max_tool_iterations = 12"));
         });
     }
+
+    #[test]
+    fn default_storage_read_pool_size_is_four() {
+        assert_eq!(StorageConfig::default().read_pool_size, 4);
+        assert_eq!(StorageConfig::default().effective_read_pool_size(), 4);
+    }
+
+    #[test]
+    fn save_config_writes_storage_read_pool_size() {
+        with_temp_hi(|| {
+            let config = Config::default();
+            config.save().expect("save");
+
+            let text = std::fs::read_to_string(Config::config_path()).unwrap();
+            assert!(text.contains("[storage]"));
+            assert!(text.contains("read_pool_size = 4"));
+        });
+    }

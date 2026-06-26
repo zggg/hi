@@ -183,6 +183,21 @@ pub fn ensure_compatible(conn: &Connection, db_path: &str) -> Result<()> {
     Err(incompatible_error(db_path))
 }
 
+/// Read-only connection: schema must match after write path initialized the file.
+pub fn verify_read_compatible(conn: &Connection, db_path: &str) -> Result<()> {
+    let version: i32 = conn
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(|e| Error::Message(format!("read user_version: {e}")))?;
+
+    if version == SCHEMA_VERSION {
+        return Ok(());
+    }
+    if version == 0 && !database_has_user_tables(conn)? {
+        return Ok(());
+    }
+    Err(incompatible_error(db_path))
+}
+
 #[cfg(test)]
 #[path = "../../test/unit/store/schema.rs"]
 mod tests;

@@ -20,6 +20,10 @@ workspace = "~/.hi/workspace"
 # Session DB and data dir (default ~/.hi/data)
 # data_directory = "~/.hi/data"
 
+[storage]
+# Read-only SQLite connection pool size (2–8; write uses a dedicated connection)
+read_pool_size = 4
+
 # Optional: fixed UI language (omit to follow system LANG / LC_* on each run)
 # [locale]
 # lang = "zh" # or "en"

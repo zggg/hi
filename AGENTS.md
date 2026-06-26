@@ -30,7 +30,7 @@ foundation hi-core, hi-ai       平台无关核心 + LLM Provider
 ## 关键约定
 
 - **平台无关 core**：Agent 逻辑只在 `hi-core`；TUI/Gateway 只做 I/O → [docs/golden-principles/IMPORTS.md](docs/golden-principles/IMPORTS.md)
-- **共享运行时**：`HiServices`（`app/src/services.rs`）持有共享 `SessionStore`、LLM Provider、`SessionCoordinator`；Gateway 通过 `PersistedAgentHost` 调用，禁止每回合新建 store
+- **共享运行时**：`HiServices`（`app/src/services.rs`）持有共享 `SessionStore`（1 写 + 读池）、LLM Provider、`SessionCoordinator`；Gateway 通过 `PersistedAgentHost` 调用，禁止每回合新建 store
 - **会话按渠道隔离**：`tui:main` / `chat:main` / `wecom:{userid}` 互不共享 → [docs/design-docs/core-beliefs.md](docs/design-docs/core-beliefs.md)
 - **错误带上下文**：使用 `hi_core::Error`，工具/边界测试输出含修复指引 → [docs/golden-principles/ERROR_HANDLING.md](docs/golden-principles/ERROR_HANDLING.md)
 - **命名与 crate 对齐**：目录 `app/` 对应 package `hi`；其余 crate 目录名与 package 名一致 → [docs/golden-principles/NAMING.md](docs/golden-principles/NAMING.md)
@@ -100,6 +100,9 @@ docs/
 | M7 记忆体系（结绳记事） | docs/exec-plans/active/m7-memory-system.md · [详细设计](docs/design/2026-06-04-knot-memory-design.md) |
 | M8 个人微信 iLink  | docs/exec-plans/active/m8-weixin-ilink-gateway.md · [详细设计](docs/design/2026-06-09-weixin-ilink-gateway-design.md) |
 | M9 国际化 i18n     | docs/exec-plans/active/m9-i18n.md |
+| M10 Gateway 公共抽象（已完成） | docs/exec-plans/active/m10-gateway-common.md |
+| M11 HTTP 接口（gateway endpoint） | docs/exec-plans/active/m11-http-gateway-endpoint.md |
+| M12 SQLite 并发访问（1 写 + 读池，已完成） | docs/exec-plans/active/m12-sqlite-concurrent-access.md |
 
 ## 约束（机器可读）
 

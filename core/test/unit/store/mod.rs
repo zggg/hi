@@ -176,6 +176,60 @@
     }
 
     #[test]
+    fn concurrent_read_pool_list_sessions() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let (db, store) = temp_db("readpool");
+        let session_id = SessionId("chat:main".into());
+        store.get_or_create_session(&session_id, "/tmp/p").unwrap();
+        store
+            .append_messages(
+                &session_id,
+                &[ChatMessage {
+                    role: Role::User,
+                    content: "hello".into(),
+                    tool_calls: None,
+                    tool_call_id: None,
+                    reasoning_content: None,
+                }],
+            )
+            .unwrap();
+
+        let store = Arc::new(store);
+        let mut handles = Vec::new();
+        for _ in 0..4 {
+            let s = Arc::clone(&store);
+            handles.push(thread::spawn(move || {
+                for _ in 0..20 {
+                    let list = s.list_sessions().unwrap();
+                    assert!(!list.is_empty());
+                    let all = s.load_all_messages(&SessionId("chat:main".into())).unwrap();
+                    assert_eq!(all.len(), 1);
+                }
+            }));
+        }
+        for h in handles {
+            h.join().expect("read pool thread panicked");
+        }
+
+        let _ = std::fs::remove_file(&db);
+    }
+
+    #[test]
+    fn open_with_custom_pool_size() {
+        let dir = std::env::temp_dir().join(format!("hi-store-pool-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let db = dir.join("sessions.db");
+        let _ = std::fs::remove_file(&db);
+        let store = SessionStore::open_with_pool(&db, 2).unwrap();
+        store
+            .list_sessions()
+            .expect("list with pool size 2");
+        let _ = std::fs::remove_file(&db);
+    }
+
+    #[test]
     fn cross_process_reload() {
         let (db, store) = temp_db("cross");
         let session_id = SessionId("chat:main".into());

@@ -1,5 +1,7 @@
 # M10 Gateway Common 抽象
 
+> 里程碑编号：**M10**（已完成）。后续 HTTP 接口计划为 [M11](m11-http-gateway-endpoint.md)。
+
 > 状态：**已完成**（P1–P4）  
 > 目标：三渠道共享 turn 编排，新渠道只实现协议层。
 

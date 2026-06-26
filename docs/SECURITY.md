@@ -26,7 +26,7 @@ v1 为单用户场景。企微/飞书默认 `dm_policy=allowlist` + `allow_from`
 
 ## Gateway 生产约束
 
-- **共享持久化**：`HiServices` 持有单一 `SessionStore`（SQLite WAL），禁止每回合新建连接
+- **共享持久化**：`HiServices` 持有单一 `SessionStore`（SQLite WAL；1 写 + 读连接池），禁止每回合新建 store
 - **会话串行**：`SessionCoordinator` 按 `session_id` 串行 agent turn，避免同用户并发写库
 - **全局背压**：Gateway 使用 semaphore 限制并发 turn 数（默认 16）
 - **日志脱敏**：企微消息内容仅记录长度（`debug!(len=…)`），不记录全文

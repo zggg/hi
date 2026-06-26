@@ -56,7 +56,11 @@ pub enum MemoryCommands {
 pub async fn run(cmd: MemoryCommands) -> anyhow::Result<()> {
     let config = load_config().map_err(map_err)?;
     let locale = config.resolved_locale();
-    let store = SessionStore::open(config.sessions_db_path()).map_err(map_err)?;
+    let store = SessionStore::open_with_pool(
+        config.sessions_db_path(),
+        config.storage.effective_read_pool_size(),
+    )
+    .map_err(map_err)?;
 
     match cmd {
         MemoryCommands::List { all, owner } => {

@@ -514,6 +514,7 @@ fn save_setup(
         logging: baseline.logging.clone(),
         tools: baseline.tools.clone(),
         locale: baseline.locale.clone(),
+        storage: baseline.storage.clone(),
     };
 
     session.save(&t(session.locale(), MessageId::SetupSaving, &[]), || {

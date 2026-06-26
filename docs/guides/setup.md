@@ -39,6 +39,7 @@ cp hi.example.toml ~/.hi/hi.toml
 | `[ai].default` | 激活的 LLM 实例名（如 `openai-compat`） |
 | `[ai.providers.<name>]` | 各 LLM 实例：`provider`、`model`、`base_url`、`api_key` |
 | `[context]` | 上下文压缩（默认启用） |
+| `[storage]` | 会话库读连接池大小（`read_pool_size`，默认 4；写连接固定 1 条） |
 | `[memory]` | 结绳长期记忆（默认启用，含回合后抽取） |
 | `[channels.wecom]` 等 | 消息渠道凭证（仅 gateway） |
 
@@ -56,7 +57,7 @@ cp hi.example.toml ~/.hi/hi.toml
 | 飞书用户 | `feishu:{open_id}` | 同上 |
 | 个人微信 iLink | `weixin:main` | 仅本人私聊 |
 
-数据库：`~/.hi/data/sessions.db`（WAL）。schema 升级不兼容时需备份后删除重建。
+数据库：`~/.hi/data/sessions.db`（WAL，跨进程共享）。进程内：`SessionStore` 1 条写连接 + 只读连接池（`[storage].read_pool_size`，默认 4）。schema 升级不兼容时需备份后删除重建。
 
 ### 消息渠道（可选，无需公网穿透）
 

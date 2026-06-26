@@ -42,7 +42,8 @@ pub use config::{
     default_working_directory, expand_path, gateway_channel, gateway_channel_default, hi_config_path, logs_directory, AiConfig,
     ApprovalMode, ApprovalsConfig, ChannelEndpoint, ChannelEndpointKind, ChannelsConfig,
     CommandsApprovalConfig, Config, ContextConfig, FilesystemApprovalConfig, GatewayChannelKind,
-    GATEWAY_CHANNELS, LocaleConfig, LoggingConfig, MemoryConfig, normalize_log_level, AiProviderEntry, ToolsConfig,
+    GATEWAY_CHANNELS, LocaleConfig, LoggingConfig, MemoryConfig, normalize_log_level, AiProviderEntry,
+    StorageConfig, ToolsConfig,
     WorkspaceApprovalConfig, FeishuConfig, WeComConfig, WeixinConfig, ModelProfile,
 };
 pub use error::{Error, Result};

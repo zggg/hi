@@ -8,6 +8,7 @@ mod locale;
 mod logging;
 mod memory;
 mod paths;
+mod storage;
 mod tools;
 mod feishu;
 mod wecom;
@@ -31,6 +32,9 @@ pub use paths::{
 pub use logging::{normalize_log_level, LoggingConfig};
 pub use locale::LocaleConfig;
 pub use memory::MemoryConfig;
+pub use storage::{
+    StorageConfig, DEFAULT_READ_POOL_SIZE, MAX_READ_POOL_SIZE, MIN_READ_POOL_SIZE,
+};
 pub use tools::{
     ApprovalMode, ApprovalsConfig, CommandsApprovalConfig, FilesystemApprovalConfig, ToolsConfig,
     WorkspaceApprovalConfig,
@@ -62,6 +66,8 @@ pub struct Config {
     pub tools: ToolsConfig,
     #[serde(default)]
     pub locale: LocaleConfig,
+    #[serde(default)]
+    pub storage: StorageConfig,
 }
 
 impl Default for Config {
@@ -75,6 +81,7 @@ impl Default for Config {
             logging: LoggingConfig::default(),
             tools: ToolsConfig::default(),
             locale: LocaleConfig::default(),
+            storage: StorageConfig::default(),
         }
     }
 }

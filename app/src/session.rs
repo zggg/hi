@@ -45,7 +45,11 @@ pub enum SessionCommands {
 pub fn run(cmd: SessionCommands, verbose: bool) -> anyhow::Result<()> {
     let config = load_config().map_err(|e| anyhow::anyhow!(e.to_string()))?;
     let locale = config.resolved_locale();
-    let store = SessionStore::open(config.sessions_db_path()).map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    let store = SessionStore::open_with_pool(
+        config.sessions_db_path(),
+        config.storage.effective_read_pool_size(),
+    )
+    .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
     match cmd {
         SessionCommands::List => cmd_list(&store, locale),

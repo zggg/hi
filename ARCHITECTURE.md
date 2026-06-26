@@ -37,6 +37,7 @@ hi 是 **极致轻量化的个人 AI 助手**（Cargo Workspace，5 个 crate）
 - **M1 完成**：`OpenAiCompatProvider`、`AgentLoop` 纯对话、`hi chat`
 - **M2 完成**：四工具、bash 审批、`~/.hi/hi.toml`、`hi tui`（ratatui）
 - **M3 完成**：SQLite WAL 会话（`~/.hi/data/sessions.db`）、`AgentLoop::with_persistence`
+- **M12 完成**：`SessionStore` 1 写 + 读连接池（`[storage].read_pool_size` 默认 4）→ [m12-sqlite-concurrent-access.md](docs/exec-plans/active/m12-sqlite-concurrent-access.md)
 - **M4 完成**：消息渠道 Gateway（企业微信智能机器人 WebSocket；会话 `wecom:{userid}`）
 - **M5 完成**：上下文压缩、Anthropic / Ollama Provider
 - **M6 完成**：`hi setup` / `hi gateway setup` 交互向导、统一 `~/.hi/hi.toml`

@@ -39,7 +39,10 @@ impl Clone for HiServices {
 
 impl HiServices {
     pub fn open(config: Config) -> Result<Arc<Self>> {
-        let store = Arc::new(SessionStore::open(config.sessions_db_path())?);
+        let store = Arc::new(SessionStore::open_with_pool(
+            config.sessions_db_path(),
+            config.storage.effective_read_pool_size(),
+        )?);
         let provider = build_provider(&config)?;
         let approval_policy = shared_approval_policy(&config.tools.approvals, config.resolved_locale());
         Ok(Arc::new(Self {

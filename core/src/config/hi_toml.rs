@@ -12,12 +12,15 @@ const LEGACY_CHANNELS: &str = "channels.toml";
 const ROOT_ORDER: &[&str] = &[
     "workspace",
     "data_directory",
+    "storage",
     "ai",
     "context",
     "logging",
     "tools",
     "channels",
 ];
+
+const STORAGE_ORDER: &[&str] = &["read_pool_size"];
 
 const LOGGING_ORDER: &[&str] = &["level"];
 
@@ -168,6 +171,7 @@ fn order_section_value(key: &str, value: &Value) -> Value {
     match (key, value) {
         ("ai", Value::Table(t)) => Value::Table(order_ai_table(t)),
         ("context", Value::Table(t)) => Value::Table(order_table(t, CONTEXT_ORDER)),
+        ("storage", Value::Table(t)) => Value::Table(order_table(t, STORAGE_ORDER)),
         ("logging", Value::Table(t)) => Value::Table(order_table(t, LOGGING_ORDER)),
         ("tools", Value::Table(t)) => Value::Table(order_tools_table(t)),
         ("channels", Value::Table(t)) => Value::Table(order_channels_table(t)),
