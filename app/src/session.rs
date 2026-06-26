@@ -52,7 +52,7 @@ pub fn run(cmd: SessionCommands, verbose: bool) -> anyhow::Result<()> {
     .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
     match cmd {
-        SessionCommands::List => cmd_list(&store, locale),
+        SessionCommands::List => cmd_list(&store, &config.sessions_db_path(), locale),
         SessionCommands::Show { session, context } => {
             cmd_show(&store, &session, context, verbose, locale)
         }
@@ -65,8 +65,13 @@ pub fn run(cmd: SessionCommands, verbose: bool) -> anyhow::Result<()> {
     }
 }
 
-fn cmd_list(store: &SessionStore, locale: hi_core::Locale) -> anyhow::Result<()> {
+fn cmd_list(
+    store: &SessionStore,
+    db_path: &PathBuf,
+    locale: hi_core::Locale,
+) -> anyhow::Result<()> {
     let sessions = store.list_sessions().map_err(map_err)?;
+    println!("sessions.db: {}", db_path.display());
     if sessions.is_empty() {
         println!("{}", t(locale, MessageId::SessionEmpty, &[]));
         return Ok(());

@@ -142,7 +142,7 @@ impl Config {
     pub fn data_directory(&self) -> PathBuf {
         self.data_directory
             .as_ref()
-            .map(PathBuf::from)
+            .map(|s| paths::expand_path(s))
             .unwrap_or_else(paths::default_data_directory)
     }
 
@@ -165,6 +165,9 @@ impl Config {
 
         let mut to_save = self.clone();
         to_save.workspace = paths::normalize_workspace(&self.workspace);
+        if let Some(ref dir) = to_save.data_directory {
+            to_save.data_directory = Some(paths::normalize_data_directory(dir));
+        }
         std::fs::create_dir_all(&to_save.workspace).map_err(|e| {
             Error::Message(format!(
                 "create workspace {}: {e}",

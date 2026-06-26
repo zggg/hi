@@ -33,6 +33,10 @@ pub fn normalize_workspace(path: &str) -> String {
     expand_path(path).display().to_string()
 }
 
+pub fn normalize_data_directory(path: &str) -> String {
+    expand_path(path).display().to_string()
+}
+
 pub fn default_data_directory() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
     PathBuf::from(home).join(".hi/data")
