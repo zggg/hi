@@ -13,6 +13,7 @@ const ROOT_ORDER: &[&str] = &[
     "workspace",
     "data_directory",
     "storage",
+    "gateway",
     "ai",
     "context",
     "logging",
@@ -21,6 +22,8 @@ const ROOT_ORDER: &[&str] = &[
 ];
 
 const STORAGE_ORDER: &[&str] = &["read_pool_size"];
+
+const GATEWAY_ORDER: &[&str] = &["max_concurrent_turns"];
 
 const LOGGING_ORDER: &[&str] = &["level"];
 
@@ -172,6 +175,7 @@ fn order_section_value(key: &str, value: &Value) -> Value {
         ("ai", Value::Table(t)) => Value::Table(order_ai_table(t)),
         ("context", Value::Table(t)) => Value::Table(order_table(t, CONTEXT_ORDER)),
         ("storage", Value::Table(t)) => Value::Table(order_table(t, STORAGE_ORDER)),
+        ("gateway", Value::Table(t)) => Value::Table(order_table(t, GATEWAY_ORDER)),
         ("logging", Value::Table(t)) => Value::Table(order_table(t, LOGGING_ORDER)),
         ("tools", Value::Table(t)) => Value::Table(order_tools_table(t)),
         ("channels", Value::Table(t)) => Value::Table(order_channels_table(t)),

@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use hi_core::{FeishuConfig, Locale, PersistedAgentHost, Result};
+use tokio::sync::Semaphore;
 
 use crate::adapter::ChannelAdapter;
 use crate::feishu::ws::FeishuWsGateway;
@@ -15,6 +16,7 @@ pub struct FeishuAdapter {
     host: Arc<dyn PersistedAgentHost>,
     workdir: PathBuf,
     locale: Locale,
+    turn_semaphore: Arc<Semaphore>,
 }
 
 impl FeishuAdapter {
@@ -25,6 +27,7 @@ impl FeishuAdapter {
         host: Arc<dyn PersistedAgentHost>,
         workdir: PathBuf,
         locale: Locale,
+        turn_semaphore: Arc<Semaphore>,
     ) -> Self {
         Self {
             endpoint_id,
@@ -33,6 +36,7 @@ impl FeishuAdapter {
             host,
             workdir,
             locale,
+            turn_semaphore,
         }
     }
 }
@@ -51,6 +55,7 @@ impl ChannelAdapter for FeishuAdapter {
             Arc::clone(&self.host),
             self.workdir.clone(),
             self.locale,
+            Arc::clone(&self.turn_semaphore),
         )
         .check()
         .await
@@ -64,6 +69,7 @@ impl ChannelAdapter for FeishuAdapter {
             Arc::clone(&self.host),
             self.workdir.clone(),
             self.locale,
+            Arc::clone(&self.turn_semaphore),
         )
         .run()
         .await

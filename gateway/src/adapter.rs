@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use hi_core::error::Result;
 use hi_core::{ChannelEndpoint, ChannelEndpointKind, Locale, PersistedAgentHost};
+use tokio::sync::Semaphore;
 
 /// Channel adapter trait — one implementation per message platform endpoint.
 #[async_trait]
@@ -20,6 +21,7 @@ pub fn build_adapter(
     host: Arc<dyn PersistedAgentHost>,
     workdir: PathBuf,
     locale: Locale,
+    turn_semaphore: Arc<Semaphore>,
 ) -> Result<Box<dyn ChannelAdapter>> {
     match &endpoint.kind {
         ChannelEndpointKind::WeCom { account, config } => Ok(Box::new(crate::wecom::WeComAdapter::new(
@@ -29,6 +31,7 @@ pub fn build_adapter(
             host,
             workdir,
             locale,
+            Arc::clone(&turn_semaphore),
         ))),
         ChannelEndpointKind::Feishu { account, config } => Ok(Box::new(crate::feishu::FeishuAdapter::new(
             endpoint.id.clone(),
@@ -37,6 +40,7 @@ pub fn build_adapter(
             host,
             workdir,
             locale,
+            Arc::clone(&turn_semaphore),
         ))),
         ChannelEndpointKind::Weixin { account, config } => Ok(Box::new(crate::weixin::WeixinAdapter::new(
             endpoint.id.clone(),
@@ -45,6 +49,7 @@ pub fn build_adapter(
             host,
             workdir,
             locale,
+            Arc::clone(&turn_semaphore),
         ))),
     }
 }

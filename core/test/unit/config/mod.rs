@@ -154,3 +154,15 @@ api_key = "sk-test"
             assert!(text.contains("read_pool_size = 4"));
         });
     }
+
+    #[test]
+    fn save_config_writes_gateway_max_concurrent_turns() {
+        with_temp_hi(|| {
+            let config = Config::default();
+            config.save().expect("save");
+
+            let text = std::fs::read_to_string(Config::config_path()).unwrap();
+            assert!(text.contains("[gateway]"));
+            assert!(text.contains("max_concurrent_turns = 16"));
+        });
+    }

@@ -7,8 +7,8 @@ This ExecPlan is a living document.
 ## Purpose
 
 - 把 `hi` 的 Agent 能力通过 **HTTP + SSE** 暴露给前端/编程客户端
-- **不新增 crate**：作为 `hi-gateway` 的一种新 endpoint，随 `hi gateway` 一起跑
-- **不抄 OpenAI 协议**：暴露 hi 自己的领域模型——会话（`http:{id}`）+ 回合（turn）+ 原生 `AgentEvent` 流
+- **不新增 crate**：作为 `hi-gateway` 的一种 endpoint，随 `hi gateway` 一起跑
+- 协议建模 hi 领域：**会话**（`http:{id}`）+ **回合**（turn）+ **AgentEvent** 流式事件
 - 复用 gateway 既有公共设施（审批总线、并发限流、去重、turn 管线）
 
 ## 已锁定的设计决定
@@ -38,7 +38,7 @@ ChannelsConfig.enabled_endpoints()   # 默认包含 "http"
 - `check()` → 校验端口可绑定、token 非空（`hi gateway --check` 自动覆盖）
 - `run()` → 启动 axum，持续服务直到进程退出
 
-## HTTP 协议（native，会话优先 + 流式 AgentEvent）
+## HTTP 协议（会话优先 + 流式 AgentEvent）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -65,7 +65,7 @@ while let Some(ev) = rx.recv().await {
 }
 ```
 
-客户端能直接拿到 hi 独有的领域事件：`assistant_delta` / `reasoning_delta` / `tool_call_started` / `tool_call_finished` / `tool_output_delta` / `file_diff` / `approval_required` / `context_compressed` / `knots_injected` / `turn_completed` / `error`。
+客户端收到的 SSE 载荷即 `AgentEvent` 序列，例如：`assistant_delta`、`reasoning_delta`、`tool_call_started`、`tool_call_finished`、`tool_output_delta`、`file_diff`、`approval_required`、`context_compressed`、`knots_injected`、`turn_completed`、`error`。
 
 ## 会话只读抽象：`SessionReader`
 
@@ -131,13 +131,13 @@ token = ""            # 空 → 首次启动随机生成并写回（决定 6）
 
 ## 并发模型（多用户）
 
-HTTP **支持多用户/多前端并发**；隔离与限流由现有 runtime 提供，无需 M11 单独发明新机制。
+HTTP **支持多用户/多前端并发**；隔离与限流沿用现有 runtime。
 
 | 层级 | 行为 | 来源 |
 |------|------|------|
 | **传输** | 每个 HTTP 请求独立 async task，并行接受连接 | axum / tokio |
 | **会话** | 不同 `http:{id}` **并行**跑回合；同一 id **串行**（防 transcript 乱序） | `SessionCoordinator::with_session` |
-| **全局 turn** | 最多约 **16** 路 agent 回合同时执行，超出排队 | `common::concurrency`（与 IM 共用） |
+| **全局 turn** | 最多 **N** 路 agent 回合同时执行（默认 16），超出排队；企微/飞书/HTTP 共用同一 Semaphore | `[gateway].max_concurrent_turns` |
 | **SQLite** | `SessionStore`：1 写 + 读池（`[storage].read_pool_size`，全入口共享） | [M12](m12-sqlite-concurrent-access.md) |
 
 **典型场景**
@@ -146,12 +146,12 @@ HTTP **支持多用户/多前端并发**；隔离与限流由现有 runtime 提�
 - 同一用户连发两条 → 第二条等第一条 `turn_completed` 后再跑（同 session gate）。
 - 多 session 并行 turn + 旁路读历史 → turn 并行；旁路读走读池，写 transcript 走写连接（M12）。
 
-## 复用清单（放 gateway 的红利）
+## 复用清单（gateway 公共设施）
 
 | 设施 | 来源 | 用途 |
 |------|------|------|
 | `ApprovalBus` / `ChannelApproval` | `common::approval` | 交互式 bash 审批 |
-| 并发限流（16） | `common::concurrency` | 与 IM 共享回合并发上限 |
+| 并发限流 | `common::concurrency` + 全局 `Arc<Semaphore>` | 与 IM 共享 `[gateway].max_concurrent_turns` |
 | 去重 | `common::dedup` | `Idempotency-Key` |
 | `run_agent_turn` | `common::turn` | 非流式响应（含重试/超时/dead-letter） |
 | `channel_reply_text` | `hi-core` | 非流式时抽最终回复 |

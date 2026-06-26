@@ -2,6 +2,7 @@ mod ai;
 mod channels;
 mod context;
 mod endpoint;
+mod gateway;
 mod gateway_channel;
 mod hi_toml;
 mod locale;
@@ -21,6 +22,10 @@ use serde::{Deserialize, Serialize};
 pub use ai::{AiConfig, AiProviderEntry, ModelProfile};
 pub use channels::ChannelsConfig;
 pub use context::ContextConfig;
+pub use gateway::{
+    GatewayConfig, DEFAULT_MAX_CONCURRENT_TURNS, MAX_MAX_CONCURRENT_TURNS,
+    MIN_MAX_CONCURRENT_TURNS,
+};
 pub use gateway_channel::{
     available_gateway_channels, default_gateway_channel_id, gateway_channel,
     gateway_channel_default, GatewayChannelKind, GATEWAY_CHANNELS,
@@ -68,6 +73,8 @@ pub struct Config {
     pub locale: LocaleConfig,
     #[serde(default)]
     pub storage: StorageConfig,
+    #[serde(default)]
+    pub gateway: GatewayConfig,
 }
 
 impl Default for Config {
@@ -82,6 +89,7 @@ impl Default for Config {
             tools: ToolsConfig::default(),
             locale: LocaleConfig::default(),
             storage: StorageConfig::default(),
+            gateway: GatewayConfig::default(),
         }
     }
 }

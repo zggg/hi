@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use hi_core::{Locale, PersistedAgentHost, Result, WeixinConfig};
+use tokio::sync::Semaphore;
 
 use crate::adapter::ChannelAdapter;
 use crate::weixin::gateway::WeixinGateway;
@@ -21,10 +22,19 @@ impl WeixinAdapter {
         host: Arc<dyn PersistedAgentHost>,
         workdir: PathBuf,
         locale: Locale,
+        turn_semaphore: Arc<Semaphore>,
     ) -> Self {
         Self {
             endpoint_id: endpoint_id.clone(),
-            gateway: WeixinGateway::new(endpoint_id, account, weixin, host, workdir, locale),
+            gateway: WeixinGateway::new(
+                endpoint_id,
+                account,
+                weixin,
+                host,
+                workdir,
+                locale,
+                turn_semaphore,
+            ),
         }
     }
 }

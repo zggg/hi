@@ -21,7 +21,6 @@ use crate::common::{
     TurnContext, TurnRequest, process_turn_with_retry, reconnect_loop, warn_dm_policy,
 };
 use crate::common::config_warn::warn_feishu_mention;
-use crate::run::default_turn_concurrency;
 
 const WS_HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(300);
 const MESSAGE_DEDUP_TTL: Duration = Duration::from_secs(30 * 60);
@@ -187,6 +186,7 @@ impl FeishuWsGateway {
         host: Arc<dyn PersistedAgentHost>,
         workdir: PathBuf,
         locale: Locale,
+        turn_semaphore: Arc<Semaphore>,
     ) -> Self {
         warn_dm_policy(&endpoint_id, &feishu.dm_policy, feishu.allow_from.is_empty());
         warn_feishu_mention(&endpoint_id, feishu.mention_enabled);
@@ -200,7 +200,7 @@ impl FeishuWsGateway {
             host,
             workdir,
             http: reqwest::Client::new(),
-            turn_semaphore: Arc::new(Semaphore::new(default_turn_concurrency())),
+            turn_semaphore,
             tenant_token: Arc::new(Mutex::new(None)),
             bot_open_id: Arc::new(Mutex::new(None)),
             seen_messages: TimedDedup::new(MESSAGE_DEDUP_TTL),

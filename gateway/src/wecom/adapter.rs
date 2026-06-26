@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use hi_core::{Locale, PersistedAgentHost, Result, WeComConfig};
+use tokio::sync::Semaphore;
 
 use crate::adapter::ChannelAdapter;
 use crate::wecom::ws::WeComWsGateway;
@@ -15,6 +16,7 @@ pub struct WeComAdapter {
     host: Arc<dyn PersistedAgentHost>,
     workdir: PathBuf,
     locale: Locale,
+    turn_semaphore: Arc<Semaphore>,
 }
 
 impl WeComAdapter {
@@ -25,6 +27,7 @@ impl WeComAdapter {
         host: Arc<dyn PersistedAgentHost>,
         workdir: PathBuf,
         locale: Locale,
+        turn_semaphore: Arc<Semaphore>,
     ) -> Self {
         Self {
             endpoint_id,
@@ -33,6 +36,7 @@ impl WeComAdapter {
             host,
             workdir,
             locale,
+            turn_semaphore,
         }
     }
 }
@@ -51,6 +55,7 @@ impl ChannelAdapter for WeComAdapter {
             Arc::clone(&self.host),
             self.workdir.clone(),
             self.locale,
+            Arc::clone(&self.turn_semaphore),
         )
         .check()
         .await
@@ -64,6 +69,7 @@ impl ChannelAdapter for WeComAdapter {
             Arc::clone(&self.host),
             self.workdir.clone(),
             self.locale,
+            Arc::clone(&self.turn_semaphore),
         )
         .run()
         .await

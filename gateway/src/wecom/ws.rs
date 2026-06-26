@@ -18,7 +18,6 @@ use crate::common::{
     ApprovalBus, ChannelApproval, ChannelMessenger, NoopTurnHooks, ReplySink, TurnContext,
     TurnRequest, process_turn_with_retry, reconnect_loop, warn_dm_policy,
 };
-use crate::run::default_turn_concurrency;
 
 /// Author: gz
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,6 +79,7 @@ impl WeComWsGateway {
         host: Arc<dyn PersistedAgentHost>,
         workdir: PathBuf,
         locale: Locale,
+        turn_semaphore: Arc<Semaphore>,
     ) -> Self {
         warn_dm_policy(&endpoint_id, &wecom.dm_policy, wecom.allow_from.is_empty());
         Self {
@@ -91,7 +91,7 @@ impl WeComWsGateway {
             },
             host,
             workdir,
-            turn_semaphore: Arc::new(Semaphore::new(default_turn_concurrency())),
+            turn_semaphore,
             locale,
         }
     }

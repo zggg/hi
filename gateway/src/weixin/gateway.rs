@@ -15,7 +15,6 @@ use crate::common::{
     TurnHookContext, TurnHooks, TurnRequest, DEFAULT_TURN_MAX_ATTEMPTS, process_turn_with_retry,
     spawn_bounded_turn, turn_pipeline_watchdog_timeout,
 };
-use crate::run::default_turn_concurrency;
 use crate::weixin::ilink::{
     extract_text, is_user_text_message, IlinkClient, SESSION_EXPIRED_ERRCODE, WeixinMessage,
 };
@@ -63,6 +62,7 @@ impl WeixinGateway {
         host: Arc<dyn PersistedAgentHost>,
         workdir: PathBuf,
         locale: Locale,
+        turn_semaphore: Arc<Semaphore>,
     ) -> Self {
         warn!(
             endpoint = %endpoint_id,
@@ -77,7 +77,7 @@ impl WeixinGateway {
             },
             host,
             workdir,
-            turn_semaphore: Arc::new(Semaphore::new(default_turn_concurrency())),
+            turn_semaphore,
             greeted: Arc::new(Mutex::new(HashSet::new())),
             seen_ids: IdDedup::new(SEEN_MESSAGE_MAX),
             approval_bus: Arc::new(ApprovalBus::new()),

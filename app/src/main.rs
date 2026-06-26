@@ -299,7 +299,15 @@ async fn main() -> anyhow::Result<()> {
                 let services = HiServices::open(config).map_err(|e| map_core_err(e, locale))?;
                 let gateway_workdir =
                     resolve_config_workspace(&services.config()).map_err(|e| map_core_err(e, locale))?;
-                hi_gateway::run_gateway(channels, true, services, gateway_workdir, locale)
+                let max_concurrent_turns = services.config().gateway.effective_max_concurrent_turns();
+                hi_gateway::run_gateway(
+                    channels,
+                    true,
+                    services,
+                    gateway_workdir,
+                    locale,
+                    max_concurrent_turns,
+                )
                     .await
                     .map_err(|e| map_core_err(e, locale))?;
                 return Ok(());
@@ -322,7 +330,16 @@ async fn main() -> anyhow::Result<()> {
                     let gateway_workdir =
                         resolve_config_workspace(&services.config()).map_err(|e| map_core_err(e, locale))?;
                     spawn_gateway_reload_listener(Arc::clone(&services));
-                    hi_gateway::run_gateway(channels, false, services, gateway_workdir, locale)
+                    let max_concurrent_turns =
+                        services.config().gateway.effective_max_concurrent_turns();
+                    hi_gateway::run_gateway(
+                        channels,
+                        false,
+                        services,
+                        gateway_workdir,
+                        locale,
+                        max_concurrent_turns,
+                    )
                         .await
                         .map_err(|e| map_core_err(e, locale))?;
                 }

@@ -3,11 +3,10 @@ use std::sync::Arc;
 
 use hi_core::error::Result;
 use hi_core::{Locale, PersistedAgentHost};
+use tokio::sync::Semaphore;
+use tracing::info;
 
 use crate::adapter::build_adapter;
-
-/// Maximum concurrent agent turns across all gateway connections.
-const DEFAULT_MAX_CONCURRENT_TURNS: usize = 16;
 
 /// Start or validate configured message-channel gateway(s).
 ///
@@ -18,11 +17,24 @@ pub async fn run_gateway(
     host: Arc<dyn PersistedAgentHost>,
     workdir: PathBuf,
     locale: Locale,
+    max_concurrent_turns: usize,
 ) -> Result<()> {
+    let turn_semaphore = Arc::new(Semaphore::new(max_concurrent_turns));
+    info!(
+        max_concurrent_turns,
+        "gateway turn concurrency (shared across all endpoints)"
+    );
+
     let endpoints = channels.enabled_endpoints()?;
     if check {
         for ep in &endpoints {
-            let adapter = build_adapter(ep, Arc::clone(&host), workdir.clone(), locale)?;
+            let adapter = build_adapter(
+                ep,
+                Arc::clone(&host),
+                workdir.clone(),
+                locale,
+                Arc::clone(&turn_semaphore),
+            )?;
             adapter.check().await?;
         }
         tracing::info!(count = endpoints.len(), "gateway check OK");
@@ -32,7 +44,13 @@ pub async fn run_gateway(
     let mut handles = Vec::with_capacity(endpoints.len());
     for ep in endpoints {
         let id = ep.id.clone();
-        let adapter = build_adapter(&ep, Arc::clone(&host), workdir.clone(), locale)?;
+        let adapter = build_adapter(
+            &ep,
+            Arc::clone(&host),
+            workdir.clone(),
+            locale,
+            Arc::clone(&turn_semaphore),
+        )?;
         handles.push(tokio::spawn(async move {
             if let Err(e) = adapter.run().await {
                 tracing::warn!(endpoint = %id, error = %e, "channel adapter exited");
@@ -46,8 +64,4 @@ pub async fn run_gateway(
         }
     }
     Ok(())
-}
-
-pub fn default_turn_concurrency() -> usize {
-    DEFAULT_MAX_CONCURRENT_TURNS
 }
