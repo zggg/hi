@@ -573,7 +573,12 @@ Next steps:
             arg(args, 0)
         ),
         MessageId::TuiStatusSlashMenu => "↑↓ select · Tab/Enter fill input".into(),
-        MessageId::TuiStatusModelMenu => "↑↓ select model · Enter activate · Esc cancel".into(),
+        MessageId::TuiStatusModelMenu => "↑↓ select provider · Enter open models · Esc cancel".into(),
+        MessageId::TuiStatusModelLoading => "Fetching models… · Esc cancel".into(),
+        MessageId::TuiStatusModelPick => "↑↓ select model · Enter switch · Esc back to providers".into(),
+        MessageId::TuiModelFetching => "Fetching model list…".into(),
+        MessageId::TuiModelFetchFailed => format!("Failed to fetch model list: {}", arg(args, 0)),
+        MessageId::TuiModelNoModels => "Provider returned no models — check base_url / API Key".into(),
         MessageId::TuiSlashModel => "/model".into(),
         MessageId::TuiSlashModelDesc => "Pick and switch a configured model instance".into(),
         MessageId::TuiSlashReset => "/reset".into(),

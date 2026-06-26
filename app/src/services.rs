@@ -78,20 +78,55 @@ impl HiServices {
             .unwrap_or_default()
     }
 
-    /// 激活 provider 并持久化；不重建 session。
-    pub fn switch_active_provider(&self, name: &str) -> Result<String> {
+    /// 激活 provider 实例并把指定 model 写入其 `[ai.providers.<name>]`，持久化；不重建 session。
+    pub fn switch_active_provider_with_model(&self, name: &str, model: &str) -> Result<String> {
         let mut config = self.inner.config.write().map_err(|e| {
             hi_core::Error::Message(format!("config lock: {e}"))
         })?;
+        config.ai.set_provider_model(name, model)?;
         config.ai.activate_provider(name)?;
         config.save()?;
-        let model = config.ai.model.clone();
+        let active_model = config.ai.model.clone();
         let provider = build_provider(&config)?;
         *self.inner.provider.write().map_err(|e| {
             hi_core::Error::Message(format!("provider lock: {e}"))
         })? = provider;
         crate::gateway_svc::notify_reload();
-        Ok(model)
+        Ok(active_model)
+    }
+
+    /// 拉取某 `[ai.providers.<name>]` 当前可切换到的模型 id 列表。
+    ///
+    /// openai-compat / anthropic / ollama 走 `hi-ai::model_listing` 动态拉取（网络），
+    /// codex 读取本地 `~/.codex`，其余 adapter 返回错误。
+    pub async fn list_models_for(&self, name: &str) -> Result<Vec<String>> {
+        let (adapter, base_url, api_key) = {
+            let config = self.read_config()?;
+            let entry = config.ai.provider_entry(name).ok_or_else(|| {
+                hi_core::Error::Message(format!("未知模型配置 {name:?}"))
+            })?;
+            (
+                entry.provider.clone(),
+                entry.base_url.clone().unwrap_or_default(),
+                entry.api_key.clone(),
+            )
+        };
+        match adapter.as_str() {
+            "openai-compat" | "openai" => hi_ai::model_listing::list_openai_compat(&base_url, &api_key)
+                .await
+                .map_err(|e| hi_core::Error::Message(e.to_string())),
+            "anthropic" | "claude" => hi_ai::model_listing::list_anthropic(&base_url, &api_key)
+                .await
+                .map_err(|e| hi_core::Error::Message(e.to_string())),
+            "ollama" => hi_ai::model_listing::list_ollama(&base_url)
+                .await
+                .map_err(|e| hi_core::Error::Message(e.to_string())),
+            "codex" => Ok(crate::config::codex_model_ids()),
+            other => Err(hi_core::Error::with_arg(
+                hi_core::MessageId::UnknownAiProvider,
+                other.to_string(),
+            )),
+        }
     }
 
     /// 从磁盘重载 `[ai]`、`[tools.approvals]`（gateway SIGUSR1）。
@@ -111,16 +146,17 @@ impl HiServices {
         Ok(())
     }
 
-    /// 激活 `[ai.providers.<name>]`，持久化 hi.toml，并重建当前 session 的 AgentLoop。
-    pub fn activate_provider(
+    /// 用指定 model 激活 `[ai.providers.<name>]`，持久化 hi.toml，并重建当前 session 的 AgentLoop。
+    pub fn activate_provider_with_model(
         &self,
         name: &str,
+        model: &str,
         session_id: SessionId,
         workdir: PathBuf,
     ) -> Result<(String, Box<dyn AgentSession>)> {
-        let model = self.switch_active_provider(name)?;
+        let active_model = self.switch_active_provider_with_model(name, model)?;
         let loop_ = self.build_agent_loop(session_id, workdir)?;
-        Ok((model, Box::new(loop_)))
+        Ok((active_model, Box::new(loop_)))
     }
 
     pub fn build_agent_loop(

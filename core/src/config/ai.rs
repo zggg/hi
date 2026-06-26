@@ -126,6 +126,21 @@ impl AiConfig {
         Ok(())
     }
 
+    /// 设置某命名实例（`[ai.providers.<name>]`）绑定的模型；若它正是激活实例，同步刷新解析后字段。
+    pub fn set_provider_model(&mut self, name: &str, model: &str) -> crate::error::Result<()> {
+        let Some(entry) = self.providers.get_mut(name) else {
+            return Err(Error::Message(format!(
+                "未知模型配置 {name:?} — 可用: {}",
+                self.providers.keys().cloned().collect::<Vec<_>>().join(", ")
+            )));
+        };
+        entry.model = model.to_string();
+        if self.default == name {
+            self.model = model.to_string();
+        }
+        Ok(())
+    }
+
     /// 列出 `[ai.providers]` 中全部实例。
     pub fn profiles(&self) -> Vec<ModelProfile> {
         let mut names: Vec<_> = self.providers.keys().cloned().collect();

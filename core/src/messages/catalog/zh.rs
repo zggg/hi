@@ -545,7 +545,12 @@ Gateway 工具在 workspace 目录执行；本地 chat/tui 在当前目录。
             arg(args, 0)
         ),
         MessageId::TuiStatusSlashMenu => "↑↓ 选择 · Tab/Enter 填入输入框".into(),
-        MessageId::TuiStatusModelMenu => "↑↓ 选择模型 · Enter 激活 · Esc 取消".into(),
+        MessageId::TuiStatusModelMenu => "↑↓ 选择渠道 · Enter 进入模型列表 · Esc 取消".into(),
+        MessageId::TuiStatusModelLoading => "拉取模型中… · Esc 取消".into(),
+        MessageId::TuiStatusModelPick => "↑↓ 选择模型 · Enter 切换 · Esc 返回渠道".into(),
+        MessageId::TuiModelFetching => "拉取模型列表中…".into(),
+        MessageId::TuiModelFetchFailed => format!("拉取模型列表失败：{}", arg(args, 0)),
+        MessageId::TuiModelNoModels => "该渠道未返回可用模型 — 检查 base_url / API Key".into(),
         MessageId::TuiSlashModel => "/model".into(),
         MessageId::TuiSlashModelDesc => "选择并切换已配置的模型实例".into(),
         MessageId::TuiSlashReset => "/reset".into(),

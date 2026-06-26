@@ -24,7 +24,7 @@ use tokio::task::JoinHandle;
 
 use crate::approval::{ApprovalState, SharedApproval};
 use crate::input::{InputAction, InputArea};
-use crate::model_picker::model_picker_lines;
+use crate::model_picker::{model_list_lines, model_picker_lines};
 use crate::render::{
     busy_line, queued_for_next_turn_line, render_diff, render_notice, render_user,
     reply_logical_line, thinking_body_lines, thinking_header, thinking_preview, thinking_summary,
@@ -39,6 +39,19 @@ use crate::widgets::{
 
 const STREAM_TICK_MS: u64 = 16;
 const KEY_POLL_MS: u64 = 50;
+
+/// `/model` 二级菜单：一级选 provider 实例后进入，拉取并选择该实例可切换的模型。
+#[derive(Debug, Clone)]
+enum ModelStage {
+    /// 正在为 `provider` 拉取可用模型列表。
+    Loading { provider: String },
+    /// 拉取完成，从 `models` 中选择目标模型。
+    Pick {
+        provider: String,
+        models: Vec<String>,
+        sel: usize,
+    },
+}
 const STATUS_ROWS: u16 = 1;
 /// 固定在输入区上方的 LLM 活动预览行（thinking / tool / 回复尾行）。
 const ACTIVITY_ROWS: usize = 4;
@@ -79,8 +92,12 @@ pub struct TuiApp {
     viewport_rows: u16,
     /// 斜杠命令菜单高亮项（`/reset` 等）。
     slash_sel: usize,
-    /// `/model` 下级菜单高亮项。
+    /// `/model` 一级（provider 实例）菜单高亮项。
     model_submenu_sel: usize,
+    /// `/model` 二级（模型）菜单状态；`None` 表示未进入二级。
+    model_stage: Option<ModelStage>,
+    /// 二级菜单的异步模型拉取任务。
+    model_fetch_task: Option<JoinHandle<hi_core::Result<Vec<String>>>>,
     model_control: Arc<dyn ModelControl>,
     locale: Locale,
     /// 详细模式：开启后 think 与工具 output 全文流式写入 scrollback（`/verbose` 或 `-v`）。
@@ -123,6 +140,8 @@ impl TuiApp {
             viewport_rows: ACTIVITY_ROWS as u16 + INPUT_ROWS_MIN as u16 + STATUS_ROWS,
             slash_sel: 0,
             model_submenu_sel: 0,
+            model_stage: None,
+            model_fetch_task: None,
             locale,
             verbose,
         }
@@ -173,6 +192,7 @@ impl TuiApp {
     async fn event_loop(&mut self, terminal: &mut Term) -> hi_core::Result<()> {
         loop {
             self.poll_turn_finished().await?;
+            self.poll_model_fetch().await;
 
             if self.agent_busy() {
                 self.anim_tick = self.anim_tick.wrapping_add(1);
@@ -564,6 +584,10 @@ impl TuiApp {
             return Ok(());
         }
 
+        if self.model_stage.is_some() {
+            return self.handle_model_stage_key(key).await;
+        }
+
         if self.model_submenu_open() {
             return self.handle_model_submenu_key(key).await;
         }
@@ -604,13 +628,9 @@ impl TuiApp {
                 }
             }
             KeyCode::Enter => {
-                if self.model_submenu_open() {
-                    self.confirm_model_submenu().await?;
-                } else {
-                    match self.input.handle(key.code, key.modifiers) {
-                        InputAction::Submit(text) => self.submit_message(text).await?,
-                        InputAction::None => {}
-                    }
+                match self.input.handle(key.code, key.modifiers) {
+                    InputAction::Submit(text) => self.submit_message(text).await?,
+                    InputAction::None => {}
                 }
                 self.mark_dirty();
             }
@@ -747,27 +767,46 @@ impl TuiApp {
         self.start_agent_turn(text).await
     }
 
-    async fn activate_model(&mut self, name: &str) -> hi_core::Result<()> {
+    /// 推入一条仅含通知的回合（菜单态下没有进行中的 turn 可挂载通知）。
+    fn emit_notice(&mut self, user: String, notice: Notice) {
+        self.turns.push(Turn {
+            user,
+            ..Turn::default()
+        });
+        if let Some(turn) = self.turns.last_mut() {
+            turn.push_notice(notice);
+            turn.finalize();
+        }
+        self.mark_dirty();
+    }
+
+    /// 某 provider 实例当前绑定的模型（用于二级菜单标注「当前」）。
+    fn current_model_of(&self, provider: &str) -> Option<String> {
+        self.model_control
+            .profiles()
+            .into_iter()
+            .find(|p| p.name == provider)
+            .map(|p| p.model)
+    }
+
+    /// 用指定 model 激活某 provider 实例，重建 session 并刷新状态行模型名。
+    async fn activate_model(&mut self, name: &str, model: &str) -> hi_core::Result<()> {
         if self.agent_busy() {
             if let Some(turn) = self.turns.last_mut() {
-                    turn.push_notice(Notice::Error(t(
-                        self.locale,
-                        MessageId::GatewayBusy,
-                        &[],
-                    )));
+                turn.push_notice(Notice::Error(t(self.locale, MessageId::GatewayBusy, &[])));
                 turn.finalize();
             }
             return Ok(());
         }
-        match self.model_control.activate(name) {
-            Ok((model, session)) => {
+        match self.model_control.activate(name, model) {
+            Ok((active_model, session)) => {
                 *self.session.lock().await = session;
-                self.model = model.clone();
+                self.model = active_model.clone();
                 if let Some(turn) = self.turns.last_mut() {
                     turn.push_notice(Notice::System(t(
                         self.locale,
                         MessageId::TuiModelActivated,
-                        &[name.to_string(), model.to_string()],
+                        &[name.to_string(), active_model],
                     )));
                     turn.finalize();
                 }
@@ -783,43 +822,168 @@ impl TuiApp {
         Ok(())
     }
 
-    async fn confirm_model_submenu(&mut self) -> hi_core::Result<()> {
+    /// 一级菜单选中 provider 实例后进入二级：异步拉取该实例可切换的模型列表。
+    async fn enter_model_stage(&mut self) -> hi_core::Result<()> {
         let (_, filtered) = self.filtered_model_profiles();
         if filtered.is_empty() {
-            self.turns.push(Turn {
-                user: self.input.as_str().trim().to_string(),
-                ..Turn::default()
-            });
-            if let Some(turn) = self.turns.last_mut() {
-                turn.push_notice(Notice::Error(
-                    t(
-                        self.locale,
-                        MessageId::TuiModelUnknown,
-                        &[self.input.as_str().trim().to_string()],
-                    ),
-                ));
-                turn.finalize();
-            }
+            let typed = self.input.as_str().trim().to_string();
+            self.emit_notice(
+                typed.clone(),
+                Notice::Error(t(self.locale, MessageId::TuiModelUnknown, &[typed])),
+            );
             self.input.clear();
-            self.mark_dirty();
+            return Ok(());
+        }
+        if self.agent_busy() {
+            self.emit_notice(
+                "/model".to_string(),
+                Notice::Error(t(self.locale, MessageId::GatewayBusy, &[])),
+            );
             return Ok(());
         }
         let sel = slash::clamp_selection(self.model_submenu_sel, filtered.len());
-        let name = filtered[sel].name.clone();
+        let provider = filtered[sel].name.clone();
+        self.model_stage = Some(ModelStage::Loading {
+            provider: provider.clone(),
+        });
+        let mc = Arc::clone(&self.model_control);
+        self.model_fetch_task = Some(tokio::spawn(async move { mc.list_models(&provider).await }));
+        self.mark_dirty();
+        Ok(())
+    }
+
+    /// 二级菜单确认选中模型：激活 provider + model。
+    async fn confirm_model_pick(
+        &mut self,
+        provider: String,
+        models: Vec<String>,
+        sel: usize,
+    ) -> hi_core::Result<()> {
+        if models.is_empty() {
+            return Ok(());
+        }
+        let model = models[slash::clamp_selection(sel, models.len())].clone();
+        self.model_stage = None;
+        self.input.clear();
         self.turns.push(Turn {
-            user: format!("/model {name}"),
+            user: format!("/model {provider} {model}"),
             ..Turn::default()
         });
-        self.input.clear();
-        self.activate_model(&name).await
+        self.activate_model(&provider, &model).await
+    }
+
+    /// 轮询二级菜单的模型拉取任务：完成后填充选择列表或报错回退。
+    async fn poll_model_fetch(&mut self) {
+        let finished = self
+            .model_fetch_task
+            .as_ref()
+            .map(|t| t.is_finished())
+            .unwrap_or(false);
+        if !finished {
+            return;
+        }
+        let Some(task) = self.model_fetch_task.take() else {
+            return;
+        };
+        // 仍处于 Loading 才接受结果；用户中途 Esc 取消则丢弃。
+        let provider = match &self.model_stage {
+            Some(ModelStage::Loading { provider }) => provider.clone(),
+            _ => return,
+        };
+        match task.await {
+            Ok(Ok(models)) => {
+                if models.is_empty() {
+                    self.model_stage = None;
+                    self.emit_notice(
+                        format!("/model {provider}"),
+                        Notice::Error(t(self.locale, MessageId::TuiModelNoModels, &[])),
+                    );
+                } else {
+                    let sel = self
+                        .current_model_of(&provider)
+                        .and_then(|cur| models.iter().position(|m| *m == cur))
+                        .unwrap_or(0);
+                    self.model_stage = Some(ModelStage::Pick {
+                        provider,
+                        models,
+                        sel,
+                    });
+                    self.mark_dirty();
+                }
+            }
+            Ok(Err(e)) => {
+                self.model_stage = None;
+                self.emit_notice(
+                    format!("/model {provider}"),
+                    Notice::Error(t(
+                        self.locale,
+                        MessageId::TuiModelFetchFailed,
+                        &[e.render(self.locale)],
+                    )),
+                );
+            }
+            Err(_) => {
+                self.model_stage = None;
+                self.mark_dirty();
+            }
+        }
+    }
+
+    fn set_model_pick_sel(&mut self, next: usize) {
+        if let Some(ModelStage::Pick { sel, .. }) = &mut self.model_stage {
+            *sel = next;
+            self.mark_dirty();
+        }
+    }
+
+    /// 二级菜单（Loading / Pick）键处理。
+    async fn handle_model_stage_key(&mut self, key: KeyEvent) -> hi_core::Result<()> {
+        match self.model_stage.clone() {
+            Some(ModelStage::Loading { .. }) => {
+                if key.code == KeyCode::Esc {
+                    if let Some(task) = self.model_fetch_task.take() {
+                        task.abort();
+                    }
+                    self.model_stage = None;
+                    self.mark_dirty();
+                }
+            }
+            Some(ModelStage::Pick { provider, models, sel }) => match key.code {
+                KeyCode::Up => self.set_model_pick_sel(sel.saturating_sub(1)),
+                KeyCode::Down => {
+                    self.set_model_pick_sel((sel + 1).min(models.len().saturating_sub(1)))
+                }
+                KeyCode::Enter
+                    if !key.modifiers.contains(KeyModifiers::SHIFT) && !self.input.shift_held() =>
+                {
+                    self.confirm_model_pick(provider, models, sel).await?;
+                }
+                KeyCode::Esc => {
+                    // 退回一级（provider）菜单，输入框仍保留 `/model`。
+                    self.model_stage = None;
+                    self.mark_dirty();
+                }
+                _ => {}
+            },
+            None => {}
+        }
+        Ok(())
     }
 
     async fn handle_model_submenu_key(&mut self, key: KeyEvent) -> hi_core::Result<()> {
         let (_, filtered) = self.filtered_model_profiles();
         if filtered.is_empty() {
-            if key.code == KeyCode::Esc {
-                self.input.clear();
-                self.mark_dirty();
+            match key.code {
+                KeyCode::Enter
+                    if !key.modifiers.contains(KeyModifiers::SHIFT) && !self.input.shift_held() =>
+                {
+                    self.enter_model_stage().await?;
+                }
+                KeyCode::Esc => {
+                    self.input.clear();
+                    self.mark_dirty();
+                }
+                _ => {}
             }
             return Ok(());
         }
@@ -836,7 +1000,7 @@ impl TuiApp {
             KeyCode::Enter
                 if !key.modifiers.contains(KeyModifiers::SHIFT) && !self.input.shift_held() =>
             {
-                self.confirm_model_submenu().await?;
+                self.enter_model_stage().await?;
             }
             KeyCode::Esc => {
                 self.input.clear();
@@ -973,6 +1137,16 @@ impl TuiApp {
     }
 
     fn status_line(&self) -> Line<'static> {
+        if let Some(stage) = &self.model_stage {
+            let id = match stage {
+                ModelStage::Loading { .. } => MessageId::TuiStatusModelLoading,
+                ModelStage::Pick { .. } => MessageId::TuiStatusModelPick,
+            };
+            return Line::from(Span::styled(
+                t(self.locale, id, &[]),
+                crate::theme::UiTheme::MUTED,
+            ));
+        }
         if self.model_submenu_open() {
             return Line::from(Span::styled(
                 t(self.locale, MessageId::TuiStatusModelMenu, &[]),
@@ -1046,6 +1220,30 @@ impl TuiApp {
         if let Some(matches) = self.slash_menu_matches() {
             let sel = slash::clamp_selection(self.slash_sel, matches.len());
             let menu = slash::menu_lines(&matches, sel, width, ACTIVITY_ROWS, self.locale);
+            let menu_top = ACTIVITY_ROWS.saturating_sub(menu.len());
+            for (slot, row) in activity_rows.iter().enumerate() {
+                let line = slot
+                    .checked_sub(menu_top)
+                    .and_then(|idx| menu.get(idx))
+                    .cloned()
+                    .unwrap_or_else(|| Line::from(""));
+                frame.render_widget(Paragraph::new(line), *row);
+            }
+            return;
+        }
+
+        if let Some(stage) = &self.model_stage {
+            let menu = match stage {
+                ModelStage::Loading { .. } => vec![Line::from(Span::styled(
+                    t(self.locale, MessageId::TuiModelFetching, &[]),
+                    crate::theme::UiTheme::MUTED,
+                ))],
+                ModelStage::Pick { provider, models, sel } => {
+                    let current = self.current_model_of(provider);
+                    let sel = slash::clamp_selection(*sel, models.len());
+                    model_list_lines(models, current.as_deref(), sel, width, ACTIVITY_ROWS)
+                }
+            };
             let menu_top = ACTIVITY_ROWS.saturating_sub(menu.len());
             for (slot, row) in activity_rows.iter().enumerate() {
                 let line = slot

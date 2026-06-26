@@ -274,6 +274,11 @@ pub enum MessageId {
     TuiStatusDefault,          // {0} model
     TuiStatusSlashMenu,
     TuiStatusModelMenu,
+    TuiStatusModelLoading,
+    TuiStatusModelPick,
+    TuiModelFetching,
+    TuiModelFetchFailed,       // {0} error
+    TuiModelNoModels,
     TuiSlashModel,
     TuiSlashModelDesc,
     TuiSlashReset,

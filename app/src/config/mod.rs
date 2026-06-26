@@ -22,6 +22,11 @@ pub fn run_gateway_setup() -> anyhow::Result<()> {
     gateway::run()
 }
 
+/// Codex 本地可选模型 id 列表（`~/.codex` 默认模型 + 缓存 + 内置兜底）。
+pub fn codex_model_ids() -> Vec<String> {
+    codex::model_ids()
+}
+
 /// Print effective configuration (`hi config`).
 pub fn show() -> anyhow::Result<()> {
     let path = Config::config_path();
