@@ -1,5 +1,7 @@
 use rusqlite::{params, Connection};
 
+use serde::Serialize;
+
 use crate::error::{Error, Result};
 use crate::SessionId;
 
@@ -8,7 +10,7 @@ use super::time::now_unix;
 /// Summary row for session listing.
 ///
 /// Author: gz
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SessionSummary {
     pub session_id: SessionId,
     pub working_directory: String,

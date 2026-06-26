@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use hi_core::{Locale, PersistedAgentHost, Result, WeComConfig};
+use hi_core::{Locale, GatewayHost, Result, WeComConfig};
 use tokio::sync::Semaphore;
 
 use crate::adapter::ChannelAdapter;
@@ -13,7 +13,7 @@ pub struct WeComAdapter {
     endpoint_id: String,
     account: String,
     wecom: WeComConfig,
-    host: Arc<dyn PersistedAgentHost>,
+    host: Arc<dyn GatewayHost>,
     workdir: PathBuf,
     locale: Locale,
     turn_semaphore: Arc<Semaphore>,
@@ -24,7 +24,7 @@ impl WeComAdapter {
         endpoint_id: String,
         account: String,
         wecom: WeComConfig,
-        host: Arc<dyn PersistedAgentHost>,
+        host: Arc<dyn GatewayHost>,
         workdir: PathBuf,
         locale: Locale,
         turn_semaphore: Arc<Semaphore>,

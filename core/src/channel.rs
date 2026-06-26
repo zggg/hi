@@ -11,6 +11,7 @@ pub enum Channel {
     Wecom,
     Feishu,
     Weixin,
+    Http,
 }
 
 impl Channel {
@@ -21,6 +22,7 @@ impl Channel {
             Channel::Wecom => "wecom",
             Channel::Feishu => "feishu",
             Channel::Weixin => "weixin",
+            Channel::Http => "http",
         }
     }
 
@@ -60,6 +62,18 @@ impl Channel {
             SessionId("weixin:main".into())
         } else {
             SessionId(format!("weixin:{account}:main"))
+        }
+    }
+
+    pub fn http_session(client_id: &str) -> SessionId {
+        SessionId(format!("http:{client_id}"))
+    }
+
+    pub fn http_account_session(account: &str, client_id: &str) -> SessionId {
+        if account.is_empty() || account == "default" {
+            Self::http_session(client_id)
+        } else {
+            SessionId(format!("http:{account}:{client_id}"))
         }
     }
 }

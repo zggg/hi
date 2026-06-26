@@ -12,7 +12,7 @@ English: [README.md](README.md)
 
 - **体积极小、秒级启动** — Release 单二进制约十兆级，无额外运行时；冷启动即可 `hi chat` / `hi tui`
 - **够轻** — 四工具 + 可选记忆，无 MCP / Skills 包袱，配置一个文件搞定
-- **一核多端** — TUI、终端、企微 / 飞书 / 微信 iLink 共用 Agent；会话按渠道隔离
+- **一核多端** — TUI、终端、HTTP API、企微 / 飞书 / 微信 iLink 共用 Agent；会话按渠道隔离
 - **本地优先** — SQLite 持久化、`~/.hi/hi.toml` 统一配置，密钥不出本机
 - **可审可控** — bash 与范围外文件默认审批；危险命令 hardline，不可放行
 - **多模型** — OpenAI 兼容 · Anthropic · Ollama · Codex；Gateway 长连接，无需公网回调
@@ -34,22 +34,6 @@ hi setup
 
 文档：[安装指南](docs/guides/install.md) · [架构](ARCHITECTURE.md) · [安全](docs/SECURITY.md)
 
-## 命令一览
-
-| 命令 | 说明 |
-|------|------|
-| `hi` / `hi tui` | 启动本地 TUI（`-s <会话>` 指定会话，`-v` 详细模式） |
-| `hi chat [消息]` | 终端对话：带参数=单轮，无参=stdin REPL |
-| `hi setup` | 配置向导：LLM + 工作目录（已配置则回车保留当前值） |
-| `hi model` | 仅配置模型：新增 / 切换 model，保留工作目录与渠道 |
-| `hi config` | 查看当前配置（密钥脱敏） |
-| `hi gateway` | 消息渠道网关；`--check` 连接预检 |
-| `hi gateway <动作>` | `setup` / `start` / `stop` / `restart` / `status` / `reload` / `run` |
-| `hi session <子命令>` | 会话：`list` / `show` / `export` / `compressions` / `compression-show` / `purge` |
-| `hi memory <子命令>` | 结绳记忆：`list` / `show` / `add` / `forget` / `reinforce` / `extract` |
-
-> 任意命令加 `--help` 查看完整参数，例如 `hi gateway --help`、`hi session show --help`。
-
 ## 可用工具
 
 Agent 内置 4 个核心工具，记忆开启后再追加 2 个（受 `[memory]` 配置控制）：
@@ -64,6 +48,48 @@ Agent 内置 4 个核心工具，记忆开启后再追加 2 个（受 `[memory]`
 | `memory_write` *(可选)* | 主动保存值得跨会话记住的持久记忆，自动去重 | — |
 
 > 审批结果写入 `tools.approvals`；`mode = "off"` 可关闭审批。`memory_search` / `memory_write` 分别由 `memory_search_enabled` / `memory_write_tool` 控制。
+
+## 命令一览
+
+| 命令 | 说明 |
+|------|------|
+| `hi` / `hi tui` | 启动本地 TUI（`-s <会话>` 指定会话，`-v` 详细模式） |
+| `hi chat [消息]` | 终端对话：带参数=单轮，无参=stdin REPL |
+| `hi setup` | 配置向导：LLM + 工作目录（已配置则回车保留当前值） |
+| `hi model` | 仅配置模型：新增 / 切换 model，保留工作目录与渠道 |
+| `hi config` | 查看当前配置（密钥脱敏） |
+| `hi gateway` | 消息渠道网关；`--check` 连接预检 |
+| `hi gateway <动作>` | `setup` / `start` / `stop` / `restart` / `status` / `reload` |
+| `hi session <子命令>` | 会话：`list` / `show` / `export` / `compressions` / `compression-show` / `purge` |
+| `hi memory <子命令>` | 结绳记忆：`list` / `show` / `add` / `forget` / `reinforce` / `extract` |
+
+> 任意命令加 `--help` 查看完整参数，例如 `hi gateway --help`、`hi session show --help`。
+
+## API Server
+
+`hi gateway` 默认监听 `127.0.0.1:9527`（`[channels.http]`，可 `enabled = false` 关闭）。URL 中的 `{id}` 映射为会话 `http:{id}`，适合前端或脚本集成。
+
+```bash
+hi gateway    # 日志会打印 Bearer token（或见 ~/.hi/hi.toml [channels.http].token）
+```
+
+| 模式 | 请求 |
+|------|------|
+| **流式**（SSE，默认） | `POST /v1/sessions/{id}/turns`，body `{"message":"..."}` |
+| **非流式**（JSON） | 同上，加 `Accept: application/json`，响应 `{ "events", "reply" }` |
+
+```bash
+# 流式
+curl -sN -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"message":"你好"}' http://127.0.0.1:9527/v1/sessions/alice/turns
+
+# 非流式
+curl -s -H "Authorization: Bearer <token>" -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{"message":"你好"}' http://127.0.0.1:9527/v1/sessions/alice/turns
+```
+
+另有 `GET /healthz`、`GET /v1/info`、`GET /v1/sessions`、`POST /v1/sessions/{id}/approvals`（bash 审批）。详见 [HTTP Gateway API](docs/guides/http-gateway-api.md)。
 
 ## 记忆系统（结绳记事）
 

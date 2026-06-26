@@ -30,3 +30,4 @@ hi-tui = { workspace = true }
 hi-gateway = { workspace = true }
 cliclack.workspace = true
 qrcode.workspace = true
+getrandom.workspace = true

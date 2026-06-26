@@ -11,7 +11,7 @@ use tracing::{debug, info, warn};
 
 use hi_core::error::{Error, Result};
 use hi_core::{
-    t, Channel, Locale, MessageId, PersistedAgentHost, WeComConfig,
+    t, Channel, Locale, MessageId, GatewayHost, WeComConfig,
 };
 
 use crate::common::{
@@ -65,7 +65,7 @@ struct WeComWsContext {
 /// Author: gz
 pub struct WeComWsGateway {
     ctx: WeComWsContext,
-    host: Arc<dyn PersistedAgentHost>,
+    host: Arc<dyn GatewayHost>,
     workdir: PathBuf,
     turn_semaphore: Arc<Semaphore>,
     locale: Locale,
@@ -76,7 +76,7 @@ impl WeComWsGateway {
         endpoint_id: String,
         account: String,
         wecom: WeComConfig,
-        host: Arc<dyn PersistedAgentHost>,
+        host: Arc<dyn GatewayHost>,
         workdir: PathBuf,
         locale: Locale,
         turn_semaphore: Arc<Semaphore>,
@@ -310,7 +310,7 @@ async fn dispatch_frame(
     text: &str,
     write: WsWrite,
     ctx: WeComWsContext,
-    host: Arc<dyn PersistedAgentHost>,
+    host: Arc<dyn GatewayHost>,
     workdir: PathBuf,
     approval_bus: Arc<ApprovalBus>,
     reply_tx: mpsc::UnboundedSender<StreamReply>,
@@ -395,7 +395,7 @@ async fn handle_msg_callback(
     frame: WsFrame,
     write: WsWrite,
     ctx: WeComWsContext,
-    host: Arc<dyn PersistedAgentHost>,
+    host: Arc<dyn GatewayHost>,
     workdir: PathBuf,
     approval_bus: Arc<ApprovalBus>,
     reply_tx: mpsc::UnboundedSender<StreamReply>,
@@ -553,7 +553,7 @@ struct UserTurnJob {
     content: String,
     req_id: String,
     stream_id: String,
-    host: Arc<dyn PersistedAgentHost>,
+    host: Arc<dyn GatewayHost>,
     workdir: PathBuf,
     approval_bus: Arc<ApprovalBus>,
     reply_tx: mpsc::UnboundedSender<StreamReply>,

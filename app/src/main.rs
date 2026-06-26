@@ -3,6 +3,7 @@ mod approval;
 mod bridge;
 mod chat_output;
 mod config;
+mod gateway_http;
 mod gateway_svc;
 mod logging;
 mod memory;
@@ -118,7 +119,7 @@ fn map_core_err(e: hi_core::Error, locale: hi_core::Locale) -> anyhow::Error {
 }
 
 #[cfg(unix)]
-fn spawn_gateway_reload_listener(services: Arc<HiServices>) {
+fn spawn_gateway_reload_listener(services: Arc<HiServices>, http_auth: hi_gateway::SharedHttpAuth) {
     tokio::spawn(async move {
         use tokio::signal::unix::{signal, SignalKind};
         let mut sig = match signal(SignalKind::user_defined1()) {
@@ -135,12 +136,16 @@ fn spawn_gateway_reload_listener(services: Arc<HiServices>) {
                 ),
                 Err(e) => tracing::warn!(error = %e, "gateway: reload from hi.toml failed"),
             }
+            match hi_gateway::reload_http_auth(&http_auth) {
+                Ok(()) => tracing::info!("gateway: reloaded [channels.http] token"),
+                Err(e) => tracing::warn!(error = %e, "gateway: reload http token failed"),
+            }
         }
     });
 }
 
 #[cfg(not(unix))]
-fn spawn_gateway_reload_listener(_services: Arc<HiServices>) {}
+fn spawn_gateway_reload_listener(_services: Arc<HiServices>, _http_auth: hi_gateway::SharedHttpAuth) {}
 
 fn chat_single_from_args(message: &[String], locale: hi_core::Locale) -> anyhow::Result<Option<String>> {
     if message.is_empty() {
@@ -293,20 +298,27 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Gateway { action, check }) => {
             if check {
+                gateway_http::ensure_http_token().map_err(|e| map_core_err(e, hi_core::resolve_locale(None)))?;
                 let config = load_config().map_err(|e| map_core_err(e, hi_core::resolve_locale(None)))?;
                 let locale = config.resolved_locale();
                 let channels = load_channels().map_err(|e| map_core_err(e, locale))?;
+                let http_auth = hi_gateway::shared_http_auth(&channels).map_err(|e| map_core_err(e, locale))?;
                 let services = HiServices::open(config).map_err(|e| map_core_err(e, locale))?;
                 let gateway_workdir =
                     resolve_config_workspace(&services.config()).map_err(|e| map_core_err(e, locale))?;
-                let max_concurrent_turns = services.config().gateway.effective_max_concurrent_turns();
+                let options = hi_gateway::GatewayRunOptions {
+                    max_concurrent_turns: services.config().gateway.effective_max_concurrent_turns(),
+                    http_auth,
+                    provider: services.config().ai.provider.clone(),
+                    model: services.config().ai.model.clone(),
+                };
                 hi_gateway::run_gateway(
                     channels,
                     true,
                     services,
                     gateway_workdir,
                     locale,
-                    max_concurrent_turns,
+                    options,
                 )
                     .await
                     .map_err(|e| map_core_err(e, locale))?;
@@ -323,22 +335,28 @@ async fn main() -> anyhow::Result<()> {
                 GatewayAction::Reload => gateway_svc::reload()?,
                 GatewayAction::Run => {
                     let _pid_guard = gateway_svc::PidGuard::new();
+                    gateway_http::ensure_http_token().map_err(|e| map_core_err(e, hi_core::resolve_locale(None)))?;
                     let config = load_config().map_err(|e| map_core_err(e, hi_core::resolve_locale(None)))?;
                     let locale = config.resolved_locale();
                     let channels = load_channels().map_err(|e| map_core_err(e, locale))?;
+                    let http_auth = hi_gateway::shared_http_auth(&channels).map_err(|e| map_core_err(e, locale))?;
                     let services = HiServices::open(config).map_err(|e| map_core_err(e, locale))?;
                     let gateway_workdir =
                         resolve_config_workspace(&services.config()).map_err(|e| map_core_err(e, locale))?;
-                    spawn_gateway_reload_listener(Arc::clone(&services));
-                    let max_concurrent_turns =
-                        services.config().gateway.effective_max_concurrent_turns();
+                    spawn_gateway_reload_listener(Arc::clone(&services), Arc::clone(&http_auth));
+                    let options = hi_gateway::GatewayRunOptions {
+                        max_concurrent_turns: services.config().gateway.effective_max_concurrent_turns(),
+                        http_auth,
+                        provider: services.config().ai.provider.clone(),
+                        model: services.config().ai.model.clone(),
+                    };
                     hi_gateway::run_gateway(
                         channels,
                         false,
                         services,
                         gateway_workdir,
                         locale,
-                        max_concurrent_turns,
+                        options,
                     )
                         .await
                         .map_err(|e| map_core_err(e, locale))?;

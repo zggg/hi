@@ -95,7 +95,7 @@ impl<T: PersistedAgentHost + SessionReader> GatewayHost for T {}
 [channels.http]
 enabled = true        # 缺省 true（决定 5）
 host = "127.0.0.1"    # 默认仅回环
-port = 8800
+port = 9527
 token = ""            # 空 → 首次启动随机生成并写回（决定 6）
 ```
 
@@ -200,7 +200,7 @@ cargo clippy --workspace -- -D warnings
 hi gateway run &                                  # 默认起 HTTP，日志打印随机 token
 curl -N -H "Authorization: Bearer <token>" \
   -d '{"message":"你好"}' \
-  http://127.0.0.1:8800/v1/sessions/alice/turns   # SSE 事件流
+  http://127.0.0.1:9527/v1/sessions/alice/turns   # SSE 事件流
 ```
 
 | Phase | 循环验收 |
@@ -215,13 +215,13 @@ curl -N -H "Authorization: Bearer <token>" \
 
 ## Progress
 
-- [ ] Phase 0 — 配置与会话命名
-- [ ] Phase 1 — axum adapter + turns SSE + 鉴权
-- [ ] Phase 2 — SessionReader 只读接口
-- [ ] Phase 3 — 交互式审批
-- [ ] Phase 4 — token 生成 + 热重载
-- [ ] Phase 5 — 去重/并发/非流式
-- [ ] Phase 6 — 文档
+- [x] Phase 0 — 配置与会话命名
+- [x] Phase 1 — axum adapter + turns SSE + 鉴权
+- [x] Phase 2 — SessionReader 只读接口
+- [x] Phase 3 — 交互式审批
+- [x] Phase 4 — token 生成 + 热重载
+- [x] Phase 5 — 去重/并发/非流式
+- [x] Phase 6 — 文档
 
 ## 风险与未决
 

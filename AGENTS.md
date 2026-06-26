@@ -101,7 +101,7 @@ docs/
 | M8 个人微信 iLink  | docs/exec-plans/active/m8-weixin-ilink-gateway.md · [详细设计](docs/design/2026-06-09-weixin-ilink-gateway-design.md) |
 | M9 国际化 i18n     | docs/exec-plans/active/m9-i18n.md |
 | M10 Gateway 公共抽象（已完成） | docs/exec-plans/active/m10-gateway-common.md |
-| M11 HTTP 接口（gateway endpoint） | docs/exec-plans/active/m11-http-gateway-endpoint.md |
+| M11 HTTP 接口（gateway endpoint） | docs/exec-plans/active/m11-http-gateway-endpoint.md · [API 指南](docs/guides/http-gateway-api.md) |
 | M12 SQLite 并发访问（1 写 + 读池，已完成） | docs/exec-plans/active/m12-sqlite-concurrent-access.md |
 
 ## 约束（机器可读）

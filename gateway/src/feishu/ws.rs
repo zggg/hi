@@ -13,7 +13,7 @@ use tracing::{debug, info, warn};
 
 use hi_core::error::{Error, Result};
 use hi_core::{
-    Channel, FeishuConfig, Locale, PersistedAgentHost,
+    Channel, FeishuConfig, Locale, GatewayHost,
 };
 
 use crate::common::{
@@ -169,7 +169,7 @@ struct CachedToken {
 /// Author: gz
 pub struct FeishuWsGateway {
     ctx: FeishuCtx,
-    host: Arc<dyn PersistedAgentHost>,
+    host: Arc<dyn GatewayHost>,
     workdir: PathBuf,
     http: reqwest::Client,
     turn_semaphore: Arc<Semaphore>,
@@ -183,7 +183,7 @@ impl FeishuWsGateway {
         endpoint_id: String,
         account: String,
         feishu: FeishuConfig,
-        host: Arc<dyn PersistedAgentHost>,
+        host: Arc<dyn GatewayHost>,
         workdir: PathBuf,
         locale: Locale,
         turn_semaphore: Arc<Semaphore>,
@@ -723,7 +723,7 @@ impl ReplySink for FeishuReplySink {
 /// Author: gz
 struct MessageHandlerCtx {
     ctx: FeishuCtx,
-    host: Arc<dyn PersistedAgentHost>,
+    host: Arc<dyn GatewayHost>,
     workdir: PathBuf,
     approval_bus: Arc<ApprovalBus>,
     reply_tx: mpsc::UnboundedSender<ReplyJob>,

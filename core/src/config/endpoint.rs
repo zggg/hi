@@ -1,4 +1,5 @@
 use super::feishu::FeishuConfig;
+use super::http::HttpConfig;
 use super::wecom::WeComConfig;
 use super::weixin::WeixinConfig;
 
@@ -27,6 +28,10 @@ pub enum ChannelEndpointKind {
         account: String,
         config: WeixinConfig,
     },
+    Http {
+        account: String,
+        config: HttpConfig,
+    },
 }
 
 impl ChannelEndpoint {
@@ -54,6 +59,15 @@ impl ChannelEndpoint {
         Self {
             id,
             kind: ChannelEndpointKind::Weixin { account, config },
+        }
+    }
+
+    pub fn http(account: impl Into<String>, config: HttpConfig) -> Self {
+        let account = account.into();
+        let id = endpoint_id_for_account("http", &account);
+        Self {
+            id,
+            kind: ChannelEndpointKind::Http { account, config },
         }
     }
 }

@@ -8,15 +8,17 @@ use crate::error::{Error, Result};
 const LEGACY_CONFIG: &str = "config.toml";
 const LEGACY_CHANNELS: &str = "channels.toml";
 
-/// Top-level hi.toml key order (human-editable layout).
+/// Top-level hi.toml key order (merge / in-memory layout).
 const ROOT_ORDER: &[&str] = &[
     "workspace",
     "data_directory",
+    "ai",
+    "logging",
     "storage",
     "gateway",
-    "ai",
+    "locale",
     "context",
-    "logging",
+    "memory",
     "tools",
     "channels",
 ];
@@ -24,6 +26,8 @@ const ROOT_ORDER: &[&str] = &[
 const STORAGE_ORDER: &[&str] = &["read_pool_size"];
 
 const GATEWAY_ORDER: &[&str] = &["max_concurrent_turns"];
+
+const HTTP_ACCOUNT_ORDER: &[&str] = &["enabled", "host", "port", "token"];
 
 const LOGGING_ORDER: &[&str] = &["level"];
 
@@ -71,6 +75,35 @@ const FEISHU_ACCOUNT_ORDER: &[&str] = &[
     "allow_from",
     "mention_enabled",
     "welcome_message",
+];
+
+const WEIXIN_ACCOUNT_ORDER: &[&str] = &[
+    "enabled",
+    "bot_token",
+    "ilink_bot_id",
+    "ilink_user_id",
+    "base_url",
+    "welcome_message",
+    "bot_type",
+    "poll_timeout_secs",
+];
+
+const MEMORY_ORDER: &[&str] = &[
+    "enabled",
+    "owner_id",
+    "max_inject_chars",
+    "inject_clarity_threshold",
+    "decay_enabled",
+    "decay_half_life_days",
+    "extract_after_turn",
+    "extract_after_turn_cue_only",
+    "extract_turn_min_tokens",
+    "extract_on_compress",
+    "memory_search_enabled",
+    "memory_write_tool",
+    "inject_baseline_only",
+    "inject_baseline_max_chars",
+    "max_search_results",
 ];
 
 pub fn hi_dir() -> PathBuf {
@@ -174,6 +207,7 @@ fn order_section_value(key: &str, value: &Value) -> Value {
     match (key, value) {
         ("ai", Value::Table(t)) => Value::Table(order_ai_table(t)),
         ("context", Value::Table(t)) => Value::Table(order_table(t, CONTEXT_ORDER)),
+        ("memory", Value::Table(t)) => Value::Table(order_table(t, MEMORY_ORDER)),
         ("storage", Value::Table(t)) => Value::Table(order_table(t, STORAGE_ORDER)),
         ("gateway", Value::Table(t)) => Value::Table(order_table(t, GATEWAY_ORDER)),
         ("logging", Value::Table(t)) => Value::Table(order_table(t, LOGGING_ORDER)),
@@ -210,16 +244,51 @@ fn order_ai_providers_table(table: &toml::Table) -> toml::Table {
 
 fn order_channels_table(table: &toml::Table) -> toml::Table {
     let mut out = toml::Table::new();
+    if let Some(Value::Table(http)) = table.get("http") {
+        out.insert("http".into(), Value::Table(order_http_table(http)));
+    }
     if let Some(Value::Table(wecom)) = table.get("wecom") {
         out.insert("wecom".into(), Value::Table(order_wecom_table(wecom)));
     }
     if let Some(Value::Table(feishu)) = table.get("feishu") {
         out.insert("feishu".into(), Value::Table(order_feishu_table(feishu)));
     }
-    append_remaining_keys(&mut out, table, &["wecom", "feishu"], |key, value| match (key, value) {
-        ("wecom" | "feishu", _) => value.clone(),
-        (_, v) => v.clone(),
-    });
+    if let Some(Value::Table(weixin)) = table.get("weixin") {
+        out.insert("weixin".into(), Value::Table(order_weixin_table(weixin)));
+    }
+    append_remaining_keys(
+        &mut out,
+        table,
+        &["http", "wecom", "feishu", "weixin"],
+        |key, value| match (key, value) {
+            ("http" | "wecom" | "feishu" | "weixin", _) => value.clone(),
+            (_, v) => v.clone(),
+        },
+    );
+    out
+}
+
+fn order_http_table(table: &toml::Table) -> toml::Table {
+    let mut out = toml::Table::new();
+    append_ordered_keys(&mut out, table, HTTP_ACCOUNT_ORDER, |_, v| v.clone());
+
+    let mut nested: Vec<String> = table
+        .keys()
+        .filter(|k| {
+            table
+                .get(*k)
+                .is_some_and(|v| v.is_table() && !HTTP_ACCOUNT_ORDER.contains(&k.as_str()))
+        })
+        .cloned()
+        .collect();
+    nested.sort();
+    for key in nested {
+        if let Some(Value::Table(sub)) = table.get(&key) {
+            out.insert(key, Value::Table(order_table(sub, HTTP_ACCOUNT_ORDER)));
+        }
+    }
+
+    append_remaining_keys(&mut out, table, HTTP_ACCOUNT_ORDER, |_, v| v.clone());
     out
 }
 
@@ -302,6 +371,33 @@ fn order_feishu_table(table: &toml::Table) -> toml::Table {
     out
 }
 
+fn order_weixin_table(table: &toml::Table) -> toml::Table {
+    let mut out = toml::Table::new();
+    append_ordered_keys(&mut out, table, WEIXIN_ACCOUNT_ORDER, |_, v| v.clone());
+
+    let mut nested: Vec<String> = table
+        .keys()
+        .filter(|k| {
+            table
+                .get(*k)
+                .is_some_and(|v| v.is_table() && !WEIXIN_ACCOUNT_ORDER.contains(&k.as_str()))
+        })
+        .cloned()
+        .collect();
+    nested.sort();
+    for key in nested {
+        if let Some(Value::Table(sub)) = table.get(&key) {
+            out.insert(
+                key,
+                Value::Table(order_table(sub, WEIXIN_ACCOUNT_ORDER)),
+            );
+        }
+    }
+
+    append_remaining_keys(&mut out, table, WEIXIN_ACCOUNT_ORDER, |_, v| v.clone());
+    out
+}
+
 fn order_table(table: &toml::Table, key_order: &[&str]) -> toml::Table {
     let mut out = toml::Table::new();
     append_ordered_keys(&mut out, table, key_order, |_, v| v.clone());
@@ -366,14 +462,93 @@ fn render_document(doc: &Value) -> Result<String> {
             .map_err(|e| Error::Message(format!("serialize hi config: {e}")));
     };
 
+    let channels = root.get("channels").and_then(|v| v.as_table());
     let mut out = String::new();
-    for (key, value) in root {
-        render_root_entry(&mut out, key, value)?;
+    let mut rendered = std::collections::HashSet::new();
+
+    for key in ["workspace", "data_directory"] {
+        if let Some(value) = root.get(key) {
+            render_root_entry(&mut out, key, value)?;
+            rendered.insert(key.to_string());
+        }
     }
+
+    for key in ["ai", "logging", "storage", "gateway"] {
+        if let Some(value) = root.get(key) {
+            let ordered = order_section_value(key, value);
+            render_root_entry(&mut out, key, &ordered)?;
+            rendered.insert(key.to_string());
+        }
+    }
+
+    if let Some(Value::Table(http)) = channels.and_then(|c| c.get("http")) {
+        let ordered = order_http_table(http);
+        render_table_section(&mut out, "channels.http", &ordered)?;
+    }
+
+    if let Some(value) = root.get("locale") {
+        render_root_entry(&mut out, "locale", value)?;
+        rendered.insert("locale".into());
+    }
+
+    for key in ["context", "memory", "tools"] {
+        if let Some(value) = root.get(key) {
+            let ordered = order_section_value(key, value);
+            render_root_entry(&mut out, key, &ordered)?;
+            rendered.insert(key.to_string());
+        }
+    }
+
+    if let Some(channels) = channels {
+        render_im_channel_sections(&mut out, channels)?;
+        rendered.insert("channels".into());
+    }
+
+    let mut rest: Vec<String> = root
+        .keys()
+        .filter(|k| !rendered.contains(*k))
+        .cloned()
+        .collect();
+    rest.sort();
+    for key in rest {
+        if let Some(value) = root.get(&key) {
+            let ordered = order_section_value(&key, value);
+            render_root_entry(&mut out, &key, &ordered)?;
+        }
+    }
+
     if !out.is_empty() && !out.ends_with('\n') {
         out.push('\n');
     }
     Ok(out)
+}
+
+fn render_im_channel_sections(out: &mut String, channels: &toml::Table) -> Result<()> {
+    let im_order = ["wecom", "feishu", "weixin"];
+    for platform in im_order {
+        if let Some(Value::Table(table)) = channels.get(platform) {
+            let ordered = match platform {
+                "wecom" => order_wecom_table(table),
+                "feishu" => order_feishu_table(table),
+                "weixin" => order_weixin_table(table),
+                _ => order_table(table, &[]),
+            };
+            render_table_section(out, &format!("channels.{platform}"), &ordered)?;
+        }
+    }
+
+    let mut rest: Vec<String> = channels
+        .keys()
+        .filter(|k| *k != "http" && !im_order.contains(&k.as_str()))
+        .cloned()
+        .collect();
+    rest.sort();
+    for platform in rest {
+        if let Some(Value::Table(table)) = channels.get(&platform) {
+            render_table_section(out, &format!("channels.{platform}"), table)?;
+        }
+    }
+    Ok(())
 }
 
 fn render_root_entry(out: &mut String, key: &str, value: &Value) -> Result<()> {
@@ -447,6 +622,8 @@ fn tools_key_comment(section: &str, key: &str) -> Option<&'static str> {
 fn is_channel_nested_account(path: &str, key: &str, _table: &toml::Table) -> bool {
     (path == "wecom" || path == "channels.wecom") && !WECOM_ACCOUNT_ORDER.contains(&key)
         || (path == "feishu" || path == "channels.feishu") && !FEISHU_ACCOUNT_ORDER.contains(&key)
+        || (path == "weixin" || path == "channels.weixin") && !WEIXIN_ACCOUNT_ORDER.contains(&key)
+        || (path == "http" || path == "channels.http") && !HTTP_ACCOUNT_ORDER.contains(&key)
 }
 
 fn format_kv_line(key: &str, value: &Value) -> Result<String> {

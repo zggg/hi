@@ -2,11 +2,22 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use hi_core::error::Result;
-use hi_core::{Locale, PersistedAgentHost};
+use hi_core::{GatewayHost, Locale};
 use tokio::sync::Semaphore;
 use tracing::info;
 
 use crate::adapter::build_adapter;
+use crate::http::SharedHttpAuth;
+
+/// Options shared across gateway adapters at startup.
+///
+/// Author: gz
+pub struct GatewayRunOptions {
+    pub max_concurrent_turns: usize,
+    pub http_auth: SharedHttpAuth,
+    pub provider: String,
+    pub model: String,
+}
 
 /// Start or validate configured message-channel gateway(s).
 ///
@@ -14,14 +25,14 @@ use crate::adapter::build_adapter;
 pub async fn run_gateway(
     channels: hi_core::ChannelsConfig,
     check: bool,
-    host: Arc<dyn PersistedAgentHost>,
+    host: Arc<dyn GatewayHost>,
     workdir: PathBuf,
     locale: Locale,
-    max_concurrent_turns: usize,
+    options: GatewayRunOptions,
 ) -> Result<()> {
-    let turn_semaphore = Arc::new(Semaphore::new(max_concurrent_turns));
+    let turn_semaphore = Arc::new(Semaphore::new(options.max_concurrent_turns));
     info!(
-        max_concurrent_turns,
+        max_concurrent_turns = options.max_concurrent_turns,
         "gateway turn concurrency (shared across all endpoints)"
     );
 
@@ -34,6 +45,9 @@ pub async fn run_gateway(
                 workdir.clone(),
                 locale,
                 Arc::clone(&turn_semaphore),
+                Arc::clone(&options.http_auth),
+                options.provider.clone(),
+                options.model.clone(),
             )?;
             adapter.check().await?;
         }
@@ -50,6 +64,9 @@ pub async fn run_gateway(
             workdir.clone(),
             locale,
             Arc::clone(&turn_semaphore),
+            Arc::clone(&options.http_auth),
+            options.provider.clone(),
+            options.model.clone(),
         )?;
         handles.push(tokio::spawn(async move {
             if let Err(e) = adapter.run().await {

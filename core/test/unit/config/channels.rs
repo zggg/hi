@@ -194,13 +194,14 @@ secret = "sec-support"
             assert_eq!(channels.wecom_account("support").unwrap().bot_id, "support-bot");
 
             let endpoints = channels.enabled_endpoints().unwrap();
-            assert_eq!(endpoints.len(), 1);
-            assert_eq!(endpoints[0].id, "wecom");
+            assert_eq!(endpoints.len(), 2);
+            assert_eq!(endpoints[0].id, "http");
+            assert_eq!(endpoints[1].id, "wecom");
         });
     }
 
     #[test]
-    fn auto_enables_all_configured_accounts_by_default() {
+    fn enabled_endpoints_includes_http_by_default() {
         with_temp_hi(|| {
             std::fs::write(
                 paths::hi_config_path(),
@@ -223,7 +224,7 @@ secret = "s2"
                 .into_iter()
                 .map(|e| e.id)
                 .collect();
-            assert_eq!(ids, vec!["wecom", "wecom:ops"]);
+            assert_eq!(ids, vec!["http", "wecom", "wecom:ops"]);
         });
     }
 
@@ -248,9 +249,10 @@ secret = "sec-support"
 
             let channels = ChannelsConfig::load().unwrap();
             let endpoints = channels.enabled_endpoints().unwrap();
-            assert_eq!(endpoints.len(), 2);
-            assert_eq!(endpoints[0].id, "wecom");
-            assert_eq!(endpoints[1].id, "wecom:support");
+            assert_eq!(endpoints.len(), 3);
+            assert_eq!(endpoints[0].id, "http");
+            assert_eq!(endpoints[1].id, "wecom");
+            assert_eq!(endpoints[2].id, "wecom:support");
         });
     }
 
@@ -275,8 +277,9 @@ secret = "s2"
 
             let channels = ChannelsConfig::load().unwrap();
             let endpoints = channels.enabled_endpoints().unwrap();
-            assert_eq!(endpoints.len(), 1);
-            assert_eq!(endpoints[0].id, "wecom");
+            assert_eq!(endpoints.len(), 2);
+            assert_eq!(endpoints[0].id, "http");
+            assert_eq!(endpoints[1].id, "wecom");
             assert!(!channels.wecom_account("ops").unwrap().enabled);
         });
     }

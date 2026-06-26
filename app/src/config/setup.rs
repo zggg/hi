@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use hi_core::{
-    expand_path, t, AiConfig, AiProviderEntry, ChannelsConfig, Config, Locale, MessageId,
+    expand_path, t, AiConfig, AiProviderEntry, ChannelsConfig, Config, HttpConfig, Locale,
+    MessageId,
 };
 
 use super::codex;
@@ -495,6 +496,14 @@ fn load_baseline(updating: bool) -> Config {
     }
 }
 
+fn channels_for_setup(channels: Option<ChannelsConfig>) -> ChannelsConfig {
+    let mut channels = channels.unwrap_or_default();
+    if channels.http_accounts().is_empty() {
+        channels.set_http_account("default", HttpConfig::default());
+    }
+    channels
+}
+
 fn save_setup(
     session: &Session,
     baseline: &Config,
@@ -520,9 +529,7 @@ fn save_setup(
 
     session.save(&t(session.locale(), MessageId::SetupSaving, &[]), || {
         config.save()?;
-        if let Some(channels) = channels {
-            channels.save()?;
-        }
+        channels_for_setup(channels).save()?;
         Ok(())
     })?;
     Ok(())

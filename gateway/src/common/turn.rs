@@ -5,7 +5,7 @@ use std::time::Duration;
 use hi_core::approval::ApprovalHandler;
 use hi_core::error::{Error, Result};
 use hi_core::{
-    channel_reply_chunks, t, Locale, MessageId, PersistedAgentHost, SessionId,
+    channel_reply_chunks, t, Locale, MessageId, GatewayHost, SessionId,
     DEFAULT_CHANNEL_CHUNK_BYTES,
 };
 use tracing::warn;
@@ -58,7 +58,7 @@ pub fn turn_pipeline_watchdog_timeout(
 pub struct TurnContext {
     pub endpoint_id: String,
     pub locale: Locale,
-    pub host: Arc<dyn PersistedAgentHost>,
+    pub host: Arc<dyn GatewayHost>,
     pub workdir: PathBuf,
     pub max_attempts: u32,
 }
@@ -67,7 +67,7 @@ impl TurnContext {
     pub fn new(
         endpoint_id: String,
         locale: Locale,
-        host: Arc<dyn PersistedAgentHost>,
+        host: Arc<dyn GatewayHost>,
         workdir: PathBuf,
     ) -> Self {
         Self {

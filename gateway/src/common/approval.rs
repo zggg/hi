@@ -45,6 +45,16 @@ impl ApprovalBus {
         }
         false
     }
+
+    /// Returns true when a pending approval waiter was resolved.
+    pub async fn resolve_decision(&self, user_key: &str, approved: bool) -> bool {
+        let mut waiters = self.waiters.lock().await;
+        if let Some(tx) = waiters.remove(user_key) {
+            let _ = tx.send(approved);
+            return true;
+        }
+        false
+    }
 }
 
 impl Default for ApprovalBus {

@@ -5,6 +5,7 @@ mod endpoint;
 mod gateway;
 mod gateway_channel;
 mod hi_toml;
+mod http;
 mod locale;
 mod logging;
 mod memory;
@@ -26,6 +27,7 @@ pub use gateway::{
     GatewayConfig, DEFAULT_MAX_CONCURRENT_TURNS, MAX_MAX_CONCURRENT_TURNS,
     MIN_MAX_CONCURRENT_TURNS,
 };
+pub use http::{HttpConfig, DEFAULT_HTTP_HOST, DEFAULT_HTTP_PORT};
 pub use gateway_channel::{
     available_gateway_channels, default_gateway_channel_id, gateway_channel,
     gateway_channel_default, GatewayChannelKind, GATEWAY_CHANNELS,

@@ -44,6 +44,19 @@ impl ReplySink for RecordingSink {
 
 struct FailingHost;
 
+impl hi_core::SessionReader for FailingHost {
+    fn list_sessions(&self) -> Result<Vec<hi_core::SessionSummary>> {
+        Ok(vec![])
+    }
+
+    fn load_all_messages(
+        &self,
+        _session_id: &SessionId,
+    ) -> Result<Vec<hi_core::StoredMessage>> {
+        Ok(vec![])
+    }
+}
+
 #[async_trait]
 impl hi_core::PersistedAgentHost for FailingHost {
     async fn run_turn(

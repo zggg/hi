@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use hi_core::{Locale, PersistedAgentHost, Result, WeixinConfig};
+use hi_core::{Locale, GatewayHost, Result, WeixinConfig};
 use tokio::sync::Semaphore;
 
 use crate::adapter::ChannelAdapter;
@@ -19,7 +19,7 @@ impl WeixinAdapter {
         endpoint_id: String,
         account: String,
         weixin: WeixinConfig,
-        host: Arc<dyn PersistedAgentHost>,
+        host: Arc<dyn GatewayHost>,
         workdir: PathBuf,
         locale: Locale,
         turn_semaphore: Arc<Semaphore>,

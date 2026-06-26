@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use hi_ai::{AnthropicProvider, CodexProvider, OllamaProvider, OpenAiCompatProvider};
 use hi_core::{
     resolve_locale, shared_approval_policy, AgentLoop, AgentSession, ApprovalPolicy, Config,
-    Locale, ModelProfile, PersistedAgentHost, Result, SessionCoordinator, SessionId, SessionStore,
-    SharedApprovalPolicy,
+    Locale, ModelProfile, PersistedAgentHost, Result, SessionCoordinator, SessionId, SessionReader,
+    SessionStore, SharedApprovalPolicy,
 };
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -210,6 +210,19 @@ impl PersistedAgentHost for HiServices {
                 agent.run_turn(&msg, approval, live).await
             })
             .await
+    }
+}
+
+impl SessionReader for HiServices {
+    fn list_sessions(&self) -> hi_core::Result<Vec<hi_core::SessionSummary>> {
+        self.inner.store.list_sessions()
+    }
+
+    fn load_all_messages(
+        &self,
+        session_id: &SessionId,
+    ) -> hi_core::Result<Vec<hi_core::StoredMessage>> {
+        self.inner.store.load_all_messages(session_id)
     }
 }
 

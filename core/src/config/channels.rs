@@ -6,6 +6,7 @@ use serde::{Serialize, Serializer};
 use super::endpoint::ChannelEndpoint;
 use super::feishu::FeishuConfig;
 use super::hi_toml;
+use super::http::HttpConfig;
 use super::paths;
 use super::wecom::WeComConfig;
 use super::weixin::WeixinConfig;
@@ -44,6 +45,8 @@ const WEIXIN_SCALAR_KEYS: &[&str] = &[
     "poll_timeout_secs",
 ];
 
+const HTTP_SCALAR_KEYS: &[&str] = &["enabled", "host", "port", "token"];
+
 /// Message-channel settings (`~/.hi/hi.toml` `[channels.*]` sections).
 ///
 /// Author: gz
@@ -52,6 +55,7 @@ pub struct ChannelsConfig {
     wecom_accounts: BTreeMap<String, WeComConfig>,
     feishu_accounts: BTreeMap<String, FeishuConfig>,
     weixin_accounts: BTreeMap<String, WeixinConfig>,
+    http_accounts: BTreeMap<String, HttpConfig>,
 }
 
 impl ChannelsConfig {
@@ -79,6 +83,7 @@ impl ChannelsConfig {
         if to_save.wecom_accounts.is_empty()
             && to_save.feishu_accounts.is_empty()
             && to_save.weixin_accounts.is_empty()
+            && to_save.http_accounts.is_empty()
         {
             table.remove("channels");
         } else {
@@ -101,6 +106,12 @@ impl ChannelsConfig {
                     accounts_to_toml(&to_save.weixin_accounts),
                 );
             }
+            if !to_save.http_accounts.is_empty() {
+                channels.insert(
+                    "http".into(),
+                    accounts_to_toml(&to_save.http_accounts),
+                );
+            }
             table.insert("channels".into(), toml::Value::Table(channels));
         }
 
@@ -118,7 +129,14 @@ impl ChannelsConfig {
         for cfg in c.weixin_accounts.values_mut() {
             cfg.bot_token = super::mask_secret(&cfg.bot_token);
         }
+        for cfg in c.http_accounts.values_mut() {
+            cfg.token = super::mask_secret(&cfg.token);
+        }
         c
+    }
+
+    pub fn http_accounts(&self) -> &BTreeMap<String, HttpConfig> {
+        &self.http_accounts
     }
 
     pub fn wecom_accounts(&self) -> &BTreeMap<String, WeComConfig> {
@@ -160,10 +178,20 @@ impl ChannelsConfig {
         }
     }
 
+    pub fn set_http_account(&mut self, account: impl Into<String>, config: HttpConfig) {
+        let account = account.into();
+        if config.is_empty() {
+            self.http_accounts.remove(&account);
+        } else {
+            self.http_accounts.insert(account, config);
+        }
+    }
+
     pub fn normalize(&mut self) {
         self.wecom_accounts.retain(|_, cfg| !cfg.is_empty());
         self.feishu_accounts.retain(|_, cfg| !cfg.is_empty());
         self.weixin_accounts.retain(|_, cfg| !cfg.is_empty());
+        self.http_accounts.retain(|_, cfg| !cfg.is_empty());
     }
 
     pub fn active_channel(&self) -> Result<String> {
@@ -203,6 +231,7 @@ impl ChannelsConfig {
                     .filter(|(_, cfg)| !cfg.is_empty() && cfg.enabled)
                     .map(|(name, _)| endpoint_id_for_weixin_account(name)),
             )
+            .chain(self.http_enabled_account_ids())
             .collect();
         ids.sort();
         ids.dedup();
@@ -228,6 +257,12 @@ impl ChannelsConfig {
         if let Some(account) = id.strip_prefix("weixin:") {
             return self.weixin_endpoint(account);
         }
+        if id == "http" {
+            return self.http_endpoint("default");
+        }
+        if let Some(account) = id.strip_prefix("http:") {
+            return self.http_endpoint(account);
+        }
         Err(Error::with_arg(
             MessageId::UnknownChannelId,
             id.to_string(),
@@ -247,6 +282,45 @@ impl ChannelsConfig {
     fn weixin_endpoint(&self, account: &str) -> Result<ChannelEndpoint> {
         let config = self.weixin_account(account)?.clone();
         Ok(ChannelEndpoint::weixin(account, config))
+    }
+
+    fn http_endpoint(&self, account: &str) -> Result<ChannelEndpoint> {
+        let config = self.http_account_config(account)?;
+        Ok(ChannelEndpoint::http(account, config))
+    }
+
+    fn http_enabled_account_ids(&self) -> impl Iterator<Item = String> {
+        let ids: Vec<String> = if self.http_accounts.is_empty() {
+            if HttpConfig::default().enabled {
+                vec![endpoint_id_for_http_account("default")]
+            } else {
+                vec![]
+            }
+        } else {
+            self.http_accounts
+                .iter()
+                .filter(|(_, cfg)| !cfg.is_empty() && cfg.enabled)
+                .map(|(name, _)| endpoint_id_for_http_account(name))
+                .collect()
+        };
+        ids.into_iter()
+    }
+
+    pub fn http_account_config(&self, account: &str) -> Result<HttpConfig> {
+        if self.http_accounts.is_empty() && account == "default" {
+            return Ok(HttpConfig::default());
+        }
+        self.http_accounts
+            .get(account)
+            .filter(|cfg| !cfg.is_empty())
+            .cloned()
+            .ok_or_else(|| {
+                Error::with_arg(MessageId::UnknownChannelId, format!("http:{account}"))
+            })
+    }
+
+    pub fn require_http(&self) -> Result<HttpConfig> {
+        self.http_account_config("default")
     }
 
     pub fn wecom_account(&self, account: &str) -> Result<&WeComConfig> {
@@ -309,6 +383,7 @@ impl Serialize for ChannelsConfig {
         if !self.wecom_accounts.is_empty()
             || !self.feishu_accounts.is_empty()
             || !self.weixin_accounts.is_empty()
+            || !self.http_accounts.is_empty()
         {
             let mut channels = serde_json::Map::new();
             if !self.wecom_accounts.is_empty() {
@@ -329,6 +404,13 @@ impl Serialize for ChannelsConfig {
                 channels.insert(
                     "weixin".into(),
                     serde_json::to_value(accounts_to_toml(&self.weixin_accounts))
+                        .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
+                );
+            }
+            if !self.http_accounts.is_empty() {
+                channels.insert(
+                    "http".into(),
+                    serde_json::to_value(accounts_to_toml(&self.http_accounts))
                         .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
                 );
             }
@@ -356,6 +438,10 @@ fn endpoint_id_for_feishu_account(account: &str) -> String {
 
 fn endpoint_id_for_weixin_account(account: &str) -> String {
     endpoint_id_for_platform_account("weixin", account)
+}
+
+fn endpoint_id_for_http_account(account: &str) -> String {
+    endpoint_id_for_platform_account("http", account)
 }
 
 fn endpoint_id_for_platform_account(platform: &str, account: &str) -> String {
@@ -404,6 +490,12 @@ fn parse_feishu_accounts(value: Option<&toml::Value>) -> Result<BTreeMap<String,
 fn parse_weixin_accounts(value: Option<&toml::Value>) -> Result<BTreeMap<String, WeixinConfig>> {
     let mut accounts =
         parse_platform_accounts::<WeixinConfig>(value, WEIXIN_SCALAR_KEYS, "weixin")?;
+    accounts.retain(|_, cfg| !cfg.is_empty());
+    Ok(accounts)
+}
+
+fn parse_http_accounts(value: Option<&toml::Value>) -> Result<BTreeMap<String, HttpConfig>> {
+    let mut accounts = parse_platform_accounts::<HttpConfig>(value, HTTP_SCALAR_KEYS, "http")?;
     accounts.retain(|_, cfg| !cfg.is_empty());
     Ok(accounts)
 }
@@ -517,6 +609,12 @@ impl ChannelsConfig {
             BTreeMap::new()
         };
 
+        let http_accounts = if let Some(channels) = channels_table {
+            parse_http_accounts(channels.get("http"))?
+        } else {
+            BTreeMap::new()
+        };
+
         if wecom_accounts.is_empty() {
             wecom_accounts = parse_wecom_accounts(root.get("wecom"))?;
         }
@@ -533,6 +631,7 @@ impl ChannelsConfig {
             wecom_accounts,
             feishu_accounts,
             weixin_accounts,
+            http_accounts,
         };
         channels.normalize();
         Ok(channels)

@@ -12,7 +12,7 @@
 
 - **Tiny & instant** — release binary ~10 MB, no extra runtime; cold start straight into `hi chat` / `hi tui`
 - **Lightweight** — four core tools + optional memory, no MCP/Skills stack; one config file
-- **One core, many surfaces** — TUI, terminal chat, WeCom / Feishu / WeChat iLink share the same Agent; sessions isolated per channel
+- **One core, many surfaces** — TUI, terminal chat, HTTP API, WeCom / Feishu / WeChat iLink share the same Agent; sessions isolated per channel
 - **Local-first** — SQLite persistence, unified `~/.hi/hi.toml`, secrets stay on your machine
 - **Reviewable & controllable** — bash and out-of-scope file access require approval by default; dangerous commands are hardline and cannot be granted
 - **Multi-provider** — OpenAI-compatible · Anthropic · Ollama · Codex; gateway uses long-lived connections, no public callback URL required
@@ -34,22 +34,6 @@ hi setup
 
 Docs: [Install](docs/guides/install.md) · [Architecture](ARCHITECTURE.md) · [Security](docs/SECURITY.md)
 
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `hi` / `hi tui` | Start the local TUI (`-s <session>` to pick a session, `-v` for verbose) |
-| `hi chat [message]` | Terminal chat: with args = single turn, without = stdin REPL |
-| `hi setup` | Setup wizard: LLM + workspace (re-run keeps current values on Enter) |
-| `hi model` | Configure the model only: add / switch model, keep workspace & channels |
-| `hi config` | Print effective configuration (secrets redacted) |
-| `hi gateway` | Message-channel gateway; `--check` for a connection preflight |
-| `hi gateway <action>` | `setup` / `start` / `stop` / `restart` / `status` / `reload` / `run` |
-| `hi session <sub>` | Sessions: `list` / `show` / `export` / `compressions` / `compression-show` / `purge` |
-| `hi memory <sub>` | Knot memory: `list` / `show` / `add` / `forget` / `reinforce` / `extract` |
-
-> Append `--help` to any command for full flags, e.g. `hi gateway --help`, `hi session show --help`.
-
 ## Tools
 
 The agent ships 4 core tools, plus 2 more when memory is enabled (gated by `[memory]` config):
@@ -64,6 +48,48 @@ The agent ships 4 core tools, plus 2 more when memory is enabled (gated by `[mem
 | `memory_write` *(optional)* | Save durable memory worth keeping across sessions; de-duplicated automatically | — |
 
 > Approvals are stored in `tools.approvals`; set `mode = "off"` to disable them. `memory_search` / `memory_write` are gated by `memory_search_enabled` / `memory_write_tool` respectively.
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `hi` / `hi tui` | Start the local TUI (`-s <session>` to pick a session, `-v` for verbose) |
+| `hi chat [message]` | Terminal chat: with args = single turn, without = stdin REPL |
+| `hi setup` | Setup wizard: LLM + workspace (re-run keeps current values on Enter) |
+| `hi model` | Configure the model only: add / switch model, keep workspace & channels |
+| `hi config` | Print effective configuration (secrets redacted) |
+| `hi gateway` | Message-channel gateway; `--check` for a connection preflight |
+| `hi gateway <action>` | `setup` / `start` / `stop` / `restart` / `status` / `reload` |
+| `hi session <sub>` | Sessions: `list` / `show` / `export` / `compressions` / `compression-show` / `purge` |
+| `hi memory <sub>` | Knot memory: `list` / `show` / `add` / `forget` / `reinforce` / `extract` |
+
+> Append `--help` to any command for full flags, e.g. `hi gateway --help`, `hi session show --help`.
+
+## API Server
+
+`hi gateway` listens on `127.0.0.1:9527` by default (`[channels.http]`; set `enabled = false` to disable). The `{id}` in the URL maps to session `http:{id}` for frontends and scripts.
+
+```bash
+hi gateway    # logs the Bearer token (or see ~/.hi/hi.toml [channels.http].token)
+```
+
+| Mode | Request |
+|------|---------|
+| **Streaming** (SSE, default) | `POST /v1/sessions/{id}/turns`, body `{"message":"..."}` |
+| **Non-streaming** (JSON) | Same, with `Accept: application/json`; response `{ "events", "reply" }` |
+
+```bash
+# Streaming
+curl -sN -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"message":"hello"}' http://127.0.0.1:9527/v1/sessions/alice/turns
+
+# Non-streaming
+curl -s -H "Authorization: Bearer <token>" -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{"message":"hello"}' http://127.0.0.1:9527/v1/sessions/alice/turns
+```
+
+Also: `GET /healthz`, `GET /v1/info`, `GET /v1/sessions`, `POST /v1/sessions/{id}/approvals` (bash approval). Details: [HTTP Gateway API](docs/guides/http-gateway-api.md).
 
 ## Memory (Knot system)
 

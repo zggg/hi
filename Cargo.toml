@@ -46,6 +46,9 @@ uuid = { version = "1", features = ["v4"] }
 rand = "0.8"
 qrcode = "0.14"
 prost = "0.13"
+axum = { version = "0.8", features = ["json"] }
+tower-http = { version = "0.6", features = ["set-header"] }
+getrandom = "0.2"
 
 hi-core = { path = "core" }
 hi-ai = { path = "ai" }

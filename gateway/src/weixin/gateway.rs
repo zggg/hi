@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use hi_core::error::{Error, Result};
-use hi_core::{t, Channel, Locale, MessageId, PersistedAgentHost, WeixinConfig};
+use hi_core::{t, Channel, Locale, MessageId, GatewayHost, WeixinConfig};
 use tokio::sync::{Mutex, Semaphore};
 use tracing::{debug, info, warn};
 
@@ -39,7 +39,7 @@ struct WeixinCtx {
 #[derive(Clone)]
 pub struct WeixinGateway {
     ctx: WeixinCtx,
-    host: Arc<dyn PersistedAgentHost>,
+    host: Arc<dyn GatewayHost>,
     workdir: PathBuf,
     turn_semaphore: Arc<Semaphore>,
     greeted: Arc<Mutex<HashSet<String>>>,
@@ -59,7 +59,7 @@ impl WeixinGateway {
         endpoint_id: String,
         account: String,
         weixin: WeixinConfig,
-        host: Arc<dyn PersistedAgentHost>,
+        host: Arc<dyn GatewayHost>,
         workdir: PathBuf,
         locale: Locale,
         turn_semaphore: Arc<Semaphore>,

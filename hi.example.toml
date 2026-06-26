@@ -20,17 +20,6 @@ workspace = "~/.hi/workspace"
 # Session DB and data dir (default ~/.hi/data)
 # data_directory = "~/.hi/data"
 
-[storage]
-# Read-only SQLite connection pool size (2–8; write uses a dedicated connection)
-read_pool_size = 4
-
-[gateway]
-# Max concurrent agent turns shared across all gateway endpoints (1–64)
-max_concurrent_turns = 16
-
-# Optional: fixed UI language (omit to follow system LANG / LC_* on each run)
-# [locale]
-# lang = "zh" # or "en"
 
 [ai]
 default = "openai-compat"
@@ -46,6 +35,36 @@ api_key = "your-api-key-here"
 # provider = "codex"
 # model = "gpt-5.5"
 # base_url = "https://chatgpt.com/backend-api/codex"
+
+[logging]
+# trace | debug | info | warn | error (RUST_LOG env overrides)
+level = "info"
+
+[storage]
+# Read-only SQLite connection pool size (2–8; write uses a dedicated connection)
+read_pool_size = 4
+
+[gateway]
+# Max concurrent agent turns shared across all gateway endpoints (1–64)
+max_concurrent_turns = 16
+
+
+# ---------------------------------------------------------------------------
+# Message channels (hi gateway only; same hi.toml as above)
+# Wizard: hi gateway setup — WeCom smart bot, Feishu, personal WeChat iLink, …
+# HTTP API is enabled by default (127.0.0.1:9527); set enabled = false to disable
+# ---------------------------------------------------------------------------
+
+[channels.http]
+enabled = true
+host = "127.0.0.1"
+port = 9527
+# token = ""  # empty → auto-generated on first `hi gateway`
+
+# Optional: fixed UI language (omit to follow system LANG / LC_* on each run)
+# [locale]
+# lang = "zh" # or "en"
+
 
 [context]
 # Default enabled = true; values are in K tokens (1K ≈ 1000 tokens)
@@ -71,10 +90,6 @@ max_tool_iterations = 12  # ReAct loop cap per turn; budget nudge near limit, to
 # memory_search_enabled = true         # agent can search memory on demand
 # memory_write_tool = true             # agent can write memory mid-turn
 
-[logging]
-# trace | debug | info | warn | error (RUST_LOG env overrides)
-level = "info"
-
 [tools.approvals]
 # on = confirm by default; off = approve everything (legacy permissions = ["*"])
 mode = "on"
@@ -94,12 +109,6 @@ allow_write = []
 # bash allowlist (grant_key exact match, not substring; includes pipe-to-shell, obfuscated-shell, …)
 # allow = ["npm", "curl"]
 allow = []
-
-# ---------------------------------------------------------------------------
-# Message channels (hi gateway only; same hi.toml as above)
-# Wizard: hi gateway setup — WeCom smart bot, Feishu, personal WeChat iLink, …
-# Each instance has enabled (default true); gateway starts all enabled instances
-# ---------------------------------------------------------------------------
 
 [channels.wecom]
 enabled = true
