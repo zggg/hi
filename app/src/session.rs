@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
 use hi_core::{t, MessageId, Role, SessionId, SessionStore, StoredMessage};
@@ -67,7 +67,7 @@ pub fn run(cmd: SessionCommands, verbose: bool) -> anyhow::Result<()> {
 
 fn cmd_list(
     store: &SessionStore,
-    db_path: &PathBuf,
+    db_path: &Path,
     locale: hi_core::Locale,
 ) -> anyhow::Result<()> {
     let sessions = store.list_sessions().map_err(map_err)?;
